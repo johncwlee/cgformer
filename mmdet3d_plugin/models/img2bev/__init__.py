@@ -5,3 +5,4 @@ from .LSSViewTransformer import LSSViewTransformer
 from .VoxelProposalLayer import VoxelProposalLayer
 from .VoxFormerHead import VoxFormerHead
 from .LSSViewTransformerLight import LSSViewTransformerLight
+from .depth_anything import DepthAnythingV2

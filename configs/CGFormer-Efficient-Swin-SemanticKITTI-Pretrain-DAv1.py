@@ -154,13 +154,19 @@ model = dict(
         numC_Trans=numC_Trans,
         cam_channels=33,
         grid_config=grid_config,
-        loss_depth_type='kld'
+        loss_depth_type='kld',
+        mono_depth=True,
     ),
     plugin_head=dict(
         type='plugin_segmentation_head',
         in_channels=numC_Trans,
         out_channel_list=[128, 64, 32],
         num_class=num_class,
+    ),
+    depth_anything=dict(
+        type="DepthAnythingV2",
+        encoder_size='l',
+        pretrained="../../misc/cgformer/ckpts/depth_anything_kitti.pth"
     )
 )
 

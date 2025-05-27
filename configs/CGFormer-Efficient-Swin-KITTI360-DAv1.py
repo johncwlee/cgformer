@@ -157,6 +157,7 @@ model = dict(
         grid_config=grid_config,
         loss_depth_type='kld',
         loss_depth_weight=0.0001,
+        mono_depth=True,
     ),
     img_view_transformer=dict(
         type='LSSViewTransformer',
@@ -355,6 +356,11 @@ model = dict(
         conv_cfg=dict(type='Conv3d', bias=False),
         norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
         class_frequencies=kitti360_class_frequencies
+    ),
+    depth_anything=dict(
+        type="DepthAnythingV2",
+        encoder_size='l',
+        pretrained="../../misc/cgformer/ckpts/depth_anything_kitti.pth"
     )
 )
 
@@ -379,4 +385,4 @@ lr_scheduler = dict(
     frequency=1
 )
 
-load_from='../../misc/cgformer/ckpts/efficientnet-seg-depth_ours.pth'
+load_from='../../misc/cgformer/ckpts/efficientnet-seg-depth-dav1-kitti_ours.pth'

@@ -41,7 +41,7 @@ class CreateDepthFromLiDAR(object):
         elif self.dataset == 'kitti360':
             img_filename = results['img_filename'][0]
             seq_id, _, _, filename = img_filename.split("/")[-4:]
-            lidar_filename = os.path.join(self.data_root, 'data_2d_raw', seq_id, 'velodyne_points', 'data', filename.replace(".png", ".bin"))
+            lidar_filename = os.path.join(self.data_root, 'data_3d_raw', seq_id, 'velodyne_points', 'data', filename.replace(".png", ".bin"))
             lidar_points = np.fromfile(lidar_filename, dtype=np.float32).reshape(-1, 4)
             lidar_points = torch.from_numpy(lidar_points[:, :3]).float()
             label_points = None

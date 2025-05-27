@@ -1,24 +1,25 @@
-data_root = '/home/data/SSCBenchKITTI360'
-ann_file = '/home/data/SSCBenchKITTI360/labels'
-stereo_depth_root = '/home/data/SSCBenchKITTI360/depth'
+data_root = '/home/data/semantickitti'    #* change this
+ann_file = '/home/data/semantickitti/labels'  #* change this
+stereo_depth_root = '/home/data/semantickitti/depth'  #* change this
 camera_used = ['left']
 
-dataset_type = 'KITTI360Dataset'
+dataset_type = 'SemanticKITTIDataset'
 point_cloud_range = [0, -25.6, -2, 51.2, 25.6, 4.4]
 occ_size = [256, 256, 32]
 
-kitti360_class_frequencies = [
-        2264087502, 20098728, 104972, 96297, 1149426, 
-        4051087, 125103, 105540713, 16292249, 45297267,
-        14454132, 110397082, 6766219, 295883213, 50037503,
-        1561069, 406330, 30516166, 1950115,
-]
+semantic_kitti_class_frequencies = [
+        5.41773033e09, 1.57835390e07, 1.25136000e05, 1.18809000e05, 6.46799000e05,
+        8.21951000e05, 2.62978000e05, 2.83696000e05, 2.04750000e05, 6.16887030e07,
+        4.50296100e06, 4.48836500e07, 2.26992300e06, 5.68402180e07, 1.57196520e07,
+        1.58442623e08, 2.06162300e06, 3.69705220e07, 1.15198800e06, 3.34146000e05,
+    ]
 
 # 20 classes with unlabeled
 class_names = [
     'unlabeled', 'car', 'bicycle', 'motorcycle', 'truck', 'other-vehicle',
-    'person', 'road', 'parking', 'sidewalk', 'other-ground', 'building', 'fence',
-    'vegetation', 'terrain', 'pole', 'traffic-sign', 'other-structure', 'other-object'
+    'person', 'bicyclist', 'motorcyclist', 'road', 'parking', 'sidewalk',
+    'other-ground', 'building', 'fence', 'vegetation', 'trunk', 'terrain',
+    'pole', 'traffic-sign',
 ]
 num_class = len(class_names)
 
@@ -32,7 +33,7 @@ bda_aug_conf = dict(
 )
 
 data_config={
-    'input_size': (384, 1408),
+    'input_size': (384, 1280),
     # 'resize': (-0.06, 0.11),
     # 'rot': (-5.4, 5.4),
     # 'flip': True,
@@ -47,7 +48,7 @@ data_config={
 train_pipeline = [
     dict(type='LoadMultiViewImageFromFiles', data_config=data_config, load_stereo_depth=True,
          is_train=True, color_jitter=(0.4, 0.4, 0.4)),
-    dict(type='CreateDepthFromLiDAR', data_root=data_root, dataset='kitti360', load_seg=False),
+    dict(type='CreateDepthFromLiDAR', data_root=data_root, dataset='kitti', load_seg=False),
     dict(type='LoadAnnotationOcc', bda_aug_conf=bda_aug_conf, apply_bda=False,
             is_train=True, point_cloud_range=point_cloud_range),
     dict(type='CollectData', keys=['img_inputs', 'gt_occ'], 
@@ -70,7 +71,7 @@ trainset_config=dict(
 test_pipeline = [
     dict(type='LoadMultiViewImageFromFiles', data_config=data_config, load_stereo_depth=True,
          is_train=False, color_jitter=None),
-    dict(type='CreateDepthFromLiDAR', data_root=data_root, dataset='kitti360'),
+    dict(type='CreateDepthFromLiDAR', data_root=data_root, dataset='kitti'),
     dict(type='LoadAnnotationOcc', bda_aug_conf=bda_aug_conf, apply_bda=False,
             is_train=False, point_cloud_range=point_cloud_range),
     dict(type='CollectData', keys=['img_inputs', 'gt_occ'],  
@@ -97,11 +98,11 @@ data = dict(
 
 train_dataloader_config = dict(
     batch_size=1,
-    num_workers=4)
+    num_workers=0)
 
 test_dataloader_config = dict(
     batch_size=1,
-    num_workers=4)
+    num_workers=0)
 
 # model
 numC_Trans = 128
@@ -141,7 +142,7 @@ model = dict(
         out_indices=(2, 3, 4, 5, 6),
         with_cp=True,
         init_cfg=dict(type='Pretrained', prefix='backbone', 
-        checkpoint='../../misc/cgformer/ckpts/efficientnet-b7_3rdparty_8xb32-aa_in1k_20220119-bf03951c.pth'),
+        checkpoint='../../misc/cgformer/ckpts/efficientnet-b7_3rdparty_8xb32-aa_in1k_20220119-bf03951c.pth'),   #* change this
     ),
     img_neck=dict(
         type='SECONDFPN',
@@ -157,6 +158,7 @@ model = dict(
         grid_config=grid_config,
         loss_depth_type='kld',
         loss_depth_weight=0.0001,
+        mono_depth=True,
     ),
     img_view_transformer=dict(
         type='LSSViewTransformer',
@@ -292,7 +294,7 @@ model = dict(
                 convert_weights=True,
                 init_cfg=dict(
                     type='Pretrained',
-                    checkpoint='../../misc/cgformer/ckpts/swin_tiny_patch4_window7_224.pth'),
+                    checkpoint='../../misc/cgformer/ckpts/swin_tiny_patch4_window7_224.pth'), #* change this
                     ),
             global_encoder_neck=dict(
                 type='GeneralizedLSSFPN',
@@ -354,13 +356,18 @@ model = dict(
         },
         conv_cfg=dict(type='Conv3d', bias=False),
         norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
-        class_frequencies=kitti360_class_frequencies
+        class_frequencies=semantic_kitti_class_frequencies
+    ),
+    depth_anything=dict(
+        type="DepthAnythingV2",
+        encoder_size='l',
+        pretrained="../../misc/cgformer/ckpts/depth_anything_kitti.pth"
     )
 )
 
 """Training params."""
 learning_rate=3e-4
-training_steps=54000
+training_steps=25000
 
 optimizer = dict(
     type="AdamW",
@@ -379,4 +386,4 @@ lr_scheduler = dict(
     frequency=1
 )
 
-load_from='../../misc/cgformer/ckpts/efficientnet-seg-depth_ours.pth'
+load_from='../../misc/cgformer/ckpts/efficientnet-seg-depth-dav1-kitti_ours.pth'   #* change this

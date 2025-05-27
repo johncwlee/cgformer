@@ -1,4 +1,5 @@
 import torch
+from torch.nn import functional as F
 from mmcv.runner import BaseModule
 from mmdet.models import DETECTORS
 from mmdet3d.models import builder
@@ -18,7 +19,8 @@ class CGFormer(BaseModule):
         pts_bbox_head=None,
         depth_loss=False,
         train_cfg=None,
-        test_cfg=None
+        test_cfg=None,
+        depth_anything=None,
     ):
         super().__init__()
 
@@ -39,6 +41,14 @@ class CGFormer(BaseModule):
         self.pts_bbox_head = builder.build_head(pts_bbox_head)
 
         self.depth_loss = depth_loss
+
+        if depth_anything is not None:
+            self.depth_anything = builder.build_neck(depth_anything)
+            self.depth_anything.eval()
+            for param in self.depth_anything.parameters():
+                param.requires_grad = False
+        else:
+            self.depth_anything = None
 
     def image_encoder(self, img):
         imgs = img
@@ -90,10 +100,27 @@ class CGFormer(BaseModule):
         
         return x
 
+    def predict_mono_depth(self, img_inputs):
+        img = img_inputs[0] #* (B, N, C, H, W)
+        B, N, C, imH, imW = img.shape
+
+        # Resize the image to a multiple of 14
+        rounded_img = F.interpolate(img.view(B * N, C, imH, imW), 
+                                    size=(int(imH / 14) * 14, int(imW / 14) * 14), 
+                                    mode='bilinear', 
+                                    align_corners=False)
+        depth = self.depth_anything(rounded_img)    #* (B*N, 1, H, W)
+        depth = F.interpolate(depth, size=(imH, imW), mode='bilinear', align_corners=False)
+        return depth
+
     def forward_train(self, data_dict):
         img_inputs = data_dict['img_inputs']
         img_metas = data_dict['img_metas']
         gt_occ = data_dict['gt_occ']
+
+        if self.depth_anything is not None:
+            mono_depth = self.predict_mono_depth(img_inputs)
+            img_metas['mono_depth'] = mono_depth
 
         img_voxel_feats, depth = self.extract_img_feat(img_inputs, img_metas)
         voxel_feats_enc = self.occ_encoder(img_voxel_feats)
@@ -137,6 +164,10 @@ class CGFormer(BaseModule):
         img_inputs = data_dict['img_inputs']
         img_metas = data_dict['img_metas']
         gt_occ = data_dict['gt_occ']
+        
+        if self.depth_anything is not None:
+            mono_depth = self.predict_mono_depth(img_inputs)
+            img_metas['mono_depth'] = mono_depth
 
         img_voxel_feats, depth = self.extract_img_feat(img_inputs, img_metas)
         voxel_feats_enc = self.occ_encoder(img_voxel_feats)

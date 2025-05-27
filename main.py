@@ -17,6 +17,7 @@ def parse_config():
     parser.add_argument('--config_path', default='./configs/semantic_kitti.py')
     parser.add_argument('--ckpt_path', default=None)
     parser.add_argument('--seed', type=int, default=7240, help='random seed point')
+    parser.add_argument('--output_dir', default='results')
     parser.add_argument('--log_folder', default='semantic_kitti')
     parser.add_argument('--save_path', default=None)
     parser.add_argument('--test_mapping', action='store_true')
@@ -34,7 +35,7 @@ def parse_config():
 
 if __name__ == '__main__':
     args, config = parse_config()
-    log_folder = os.path.join('logs', config['log_folder'])
+    log_folder = os.path.join(config['output_dir'], config['log_folder'])
     misc.check_path(log_folder)
 
     misc.check_path(os.path.join(log_folder, 'tensorboard'))
@@ -49,6 +50,7 @@ if __name__ == '__main__':
     seed = config.seed
     pl.seed_everything(seed)
     num_gpu = torch.cuda.device_count()
+    print(f"Number of GPUs: {num_gpu}")
     model = pl_model(config)
     
     data_dm = DataModule(config)

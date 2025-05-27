@@ -29,6 +29,7 @@ class GeometryDepth_Net(BaseModule):
     def __init__(
         self,
         downsample=8,
+        mono_depth=False,
         numC_input=512,
         numC_Trans=64,
         cam_channels=27,
@@ -60,6 +61,8 @@ class GeometryDepth_Net(BaseModule):
         self.constant_std = 0.5
 
         self.depth_aggregation = DepthAggregation(embed_dims=32, out_channels=1)
+        
+        self.mono_depth = mono_depth
     
     @force_fp32()
     def get_bce_depth_loss(self, depth_labels, depth_preds):
@@ -191,7 +194,7 @@ class GeometryDepth_Net(BaseModule):
     
     def forward(self, input, img_metas):
         x, rots, trans, intrins, post_rots, post_trans, bda, mlp_input = input
-        stereo_depth = img_metas['stereo_depth']
+        stereo_depth = img_metas['mono_depth'] if self.mono_depth else img_metas['stereo_depth']
 
         B, N, C, H, W = x.shape
         x = x.view(B * N, C, H, W)
