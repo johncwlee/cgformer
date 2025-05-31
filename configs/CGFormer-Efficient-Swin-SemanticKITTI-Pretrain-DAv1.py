@@ -164,9 +164,21 @@ model = dict(
         num_class=num_class,
     ),
     depth_anything=dict(
-        type="DepthAnythingV2",
+        type="DepthAnything",
         encoder_size='l',
-        pretrained="../../misc/cgformer/ckpts/depth_anything_kitti.pth"
+        img_size=(392, 518),
+        keep_aspect_ratio=False,
+        use_last_layers=True,
+        # pretrained="../../misc/cgformer/ckpts/depth_anything_kitti.pth"
+        pretrained="../../misc/cgformer/ckpts/depth_anything_metric_depth_outdoor.pt",
+        min_depth=0.001,
+        max_depth=80.0,
+        attractor_alpha=1000,
+        attractor_gamma=2,
+        attractor_kind='mean',
+        attractor_type='inv',
+        min_temp=0.0212,
+        max_temp=50.0,
     )
 )
 

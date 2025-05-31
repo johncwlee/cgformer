@@ -194,7 +194,7 @@ class GeometryDepth_Net(BaseModule):
     
     def forward(self, input, img_metas):
         x, rots, trans, intrins, post_rots, post_trans, bda, mlp_input = input
-        stereo_depth = img_metas['mono_depth'] if self.mono_depth else img_metas['stereo_depth']
+        depth = img_metas['stereo_depth']
 
         B, N, C, H, W = x.shape
         x = x.view(B * N, C, H, W)
@@ -204,7 +204,7 @@ class GeometryDepth_Net(BaseModule):
         mono_volume = self.get_depth_dist(mono_digit)
         img_feat = x[:,  self.D:self.D + self.numC_Trans, ...]
         
-        _, stereo_volume = self.get_downsampled_gt_depth(stereo_depth)
+        _, stereo_volume = self.get_downsampled_gt_depth(depth)
         stereo_volume = stereo_volume.view(B, H, W, -1).permute(0, 3, 1, 2)
         stereo_volume = self.stereo_volume_encoder(stereo_volume)
         stereo_volume = self.get_depth_dist(stereo_volume)
