@@ -16,11 +16,13 @@ class plugin_segmentation_head(nn.Module):
         num_class=20,
         norm_cfg=dict(type='BN', eps=1e-3, momentum=0.01),
         upsample_cfg=dict(type='deconv', bias=False),
+        loss_seg_weight=1.0,
         train_cfg=None,
         test_cfg=None
     ):
         super(plugin_segmentation_head, self).__init__()
         self.empty_idx = empty_idx
+        self.loss_seg_weight = loss_seg_weight
         in_channel = in_channels
         self.deconv_blocks = nn.ModuleList()
         for out_channel in out_channel_list:
@@ -70,7 +72,7 @@ class plugin_segmentation_head(nn.Module):
             loss_value += criterion(pred_points.unsqueeze(0), target_points.unsqueeze(0).long())
 
         loss_dict = {}
-        loss_dict['loss_voxel_ce'] = loss_value / b
+        loss_dict['loss_voxel_ce'] = self.loss_seg_weight * loss_value / b
         return loss_dict
             
 

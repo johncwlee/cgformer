@@ -73,7 +73,7 @@ class CGFormerSegDepth(BaseModule):
 
         context, depth = self.extract_img_feat(img_inputs=img_inputs, img_metas=img_metas)
 
-        segmentation = self.plugin_head(context)
+        segmentation = self.plugin_head(context)    #* (B, num_classes, H, W)
 
         losses = dict()
         losses['loss_depth'] = self.depth_net.get_depth_loss(img_metas['gt_depths'], depth)
