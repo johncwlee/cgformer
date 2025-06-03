@@ -24,7 +24,8 @@ colors = np.array(
 		[80, 30, 180, 255],
 		[100, 80, 250, 255],
 		[255, 30, 30, 255],
-		[255, 40, 200, 255],
+		# [255, 40, 200, 255],	#* bicyclist too similar to road
+		[187, 67, 255, 255],
 		[150, 30, 90, 255],
 		[255, 0, 255, 255],
 		[255, 150, 255, 255],
@@ -243,10 +244,9 @@ def get_fov_mask(transform, intr):
 	return fov_mask
 
 sequence = '08'
-data_root = 'data/semantickitti/sequences'
-pred_root = 'CGFormer/sequences/08/predictions'
-write_root = 'data/codebase/visualize'
-gt_root = 'data/semantickitti/labels'
+data_root = '/mnt/storage/semantickitti/sequences'
+pred_root = '../../results/cgformer/CGFormer-Efficient-Swin-SemanticKITTI-test/sequences'
+write_root = '../../results/cgformer/CGFormer-Efficient-Swin-SemanticKITTI-test/visualize'
 calib_file = os.path.join(data_root, sequence, 'calib.txt')
 calib_all = {}
 with open(calib_file, "r") as f:
@@ -262,8 +262,10 @@ lidar2cam = np.identity(4)  # 4x4 matrix
 lidar2cam[:3, :4] = calib_all["Tr"].reshape(3, 4) 
 
 pred_voxels = os.listdir(os.path.join(pred_root, sequence, 'predictions'))
+# pred_voxels = os.listdir(gt_root)
 pred_voxels.sort()
-save_name = 'CGFormer'
+save_name = 'CGFormer_pred'
+save_name_gt = 'CGFormer_gt'
 vox_origin = np.array([0, -25.6, -2])
 fov_mask = get_fov_mask(lidar2cam, intrin)
 
@@ -272,15 +274,19 @@ print(len(pred_voxels))
 for pred_voxel in pred_voxels:
 	save_root = pred_voxel.split('.')[0]
 	save_root = os.path.join(write_root, save_root)
-	if os.path.exists(os.path.join(save_root, save_name + '.png')):
-		continue
+	if os.path.exists(os.path.join(save_root, save_name + '.png')): continue
 	pred = np.fromfile(os.path.join(pred_root, sequence, 'predictions', pred_voxel), dtype=np.uint16)
-
+	gt = np.fromfile(os.path.join(pred_root, sequence, 'gt', pred_voxel), dtype=np.uint16)
 	occ_pred = pred.reshape(256, 256, 32)
 	occ_pred = occ_pred.astype(np.uint16)
 	occ_pred[occ_pred==255] = 0
+	occ_gt = gt.reshape(256, 256, 32)
+	occ_gt = occ_gt.astype(np.uint16)
+	occ_gt[occ_gt==255] = 0
 	# print(np.unique(occ_pred))
-	vox_origin = np.array([0, -25.6, -2])
-	os.makedirs(save_root, exist_ok=True)
+	# vox_origin = np.array([0, -25.6, -2])
+	# os.makedirs(save_root, exist_ok=True)
 	occformer_img = draw(occ_pred, lidar2cam, vox_origin, fov_mask, 
-                img_size=(1220, 370), f=707.0912, voxel_size=0.2, d=7, save_name=save_name, save_root=save_root, video_view=False)
+				img_size=(1220, 370), f=707.0912, voxel_size=0.2, d=7, save_name=save_name, save_root=save_root, video_view=False)
+	occformer_img = draw(occ_gt, lidar2cam, vox_origin, fov_mask, 
+				img_size=(1220, 370), f=707.0912, voxel_size=0.2, d=7, save_name=save_name_gt, save_root=save_root, video_view=False)

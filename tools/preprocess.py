@@ -87,7 +87,7 @@ def main(config):
     sequences = ["00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10"]
     remap_lut = SemanticKittiIO._get_remap_lut(
         os.path.join(
-            "./semantic-kitti.yaml",
+            "./tools/semantic-kitti.yaml",
         )
     )
 
