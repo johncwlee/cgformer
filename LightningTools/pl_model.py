@@ -102,10 +102,15 @@ class pl_model(LightningBaseModel):
             frame_id = batch['img_metas']['frame_id'][0]
             save_folder = "{}/sequences/{}/predictions".format(self.save_path, sequence_id)
             save_file = os.path.join(save_folder, "{}.label".format(frame_id))
+            gt_save_folder = "{}/sequences/{}/gt".format(self.save_path, sequence_id)
+            gt_save_file = os.path.join(gt_save_folder, "{}.label".format(frame_id))
             os.makedirs(save_folder, exist_ok=True)
+            os.makedirs(gt_save_folder, exist_ok=True)
             with open(save_file, 'wb') as f:
                 output_voxels.tofile(f)
                 print('\n save to {}'.format(save_file))
+                gt_occ.astype(np.uint16).tofile(gt_save_file)
+                print('\n save gt to {}'.format(gt_save_file))
             
         if gt_occ is not None:
             self.test_metrics.add_batch(pred, gt_occ)
