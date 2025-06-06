@@ -1,10 +1,11 @@
-data_root = '/home/data/semantickitti'    #* change this
-ann_file = '/home/data/semantickitti/labels'  #* change this
-stereo_depth_root = '/home/data/semantickitti/depth'  #* change this
+data_root = '/home/johnl/data/semantickitti'    #* change this
+ann_file = '/home/johnl/data/semantickitti/labels'  #* change this
+stereo_depth_root = '/home/johnl/data/semantickitti/depth'  #* change this
 camera_used = ['left']
 
 dataset_type = 'SemanticKITTIDataset'
 point_cloud_range = [0, -25.6, -2, 51.2, 25.6, 4.4]
+#* X (0, 51.2), Y (-25.6, 25.6), Z (-2, 4.4)
 occ_size = [256, 256, 32]
 
 semantic_kitti_class_frequencies = [
@@ -165,6 +166,12 @@ model = dict(
         out_channel_list=[128, 64, 32],
         num_class=num_class,
         loss_seg_weight=0.0001
+    ),
+    consistency_head=dict(
+        type='ConsistencyHead',
+        learnable_fuse=False,
+        temperature=1.0,
+        loss_weight=1.0
     ),
     img_view_transformer=dict(
         type='LSSViewTransformer',

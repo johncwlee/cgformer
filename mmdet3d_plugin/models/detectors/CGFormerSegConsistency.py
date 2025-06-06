@@ -12,6 +12,7 @@ class CGFormerSegConsistency(BaseModule):
         img_neck,
         depth_net,
         plugin_head,
+        consistency_head,
         img_view_transformer,
         proposal_layer,
         VoxFormer_head,
@@ -30,6 +31,7 @@ class CGFormerSegConsistency(BaseModule):
 
         self.depth_net = builder.build_neck(depth_net)
         self.plugin_head = builder.build_head(plugin_head)
+        self.consistency_head = builder.build_head(consistency_head)
         if img_view_transformer is not None:
             self.img_view_transformer = builder.build_neck(img_view_transformer)
         self.proposal_layer = builder.build_head(proposal_layer)
@@ -153,10 +155,21 @@ class CGFormerSegConsistency(BaseModule):
         pred = output['output_voxels']
         pred = torch.argmax(pred, dim=1)
 
+        #* --- 2D-3D Consistency Loss ---
+        losses_consistency = self.consistency_head.loss(
+            seg_logits=segmentation,
+            voxel_logits=output['output_voxels'],
+            cam_params=img_inputs[1:7],
+            img_metas=img_metas
+        )
+        losses.update(losses_consistency)
+        #* --- End Consistency Loss ---
+
         train_output = {
             'losses': losses,
             'pred': pred,
-            'gt_occ': gt_occ
+            'gt_occ': gt_occ,
+            'segmentation': segmentation,
         }
 
         return train_output
@@ -170,6 +183,8 @@ class CGFormerSegConsistency(BaseModule):
             img_metas['stereo_depth'] = self.depth_anything(img_inputs[0])
 
         img_voxel_feats, context, depth = self.extract_img_feat(img_inputs, img_metas)
+        #TODO: add 2d semantic head
+        # segmentation = self.plugin_head(context)    #* (B, num_classes, H, W)
         voxel_feats_enc = self.occ_encoder(img_voxel_feats)
 
         if len(voxel_feats_enc) > 1:
@@ -186,11 +201,18 @@ class CGFormerSegConsistency(BaseModule):
         )
 
         pred = output['output_voxels']
-        pred = torch.argmax(pred, dim=1)
+        pred = torch.argmax(pred, dim=1)    #* (B, occ_X, occ_Y, occ_Z)
+        
+        projected_gt = self.consistency_head.visualize_occ_in_2d(
+            occ_labels=gt_occ,
+            cam_params=img_inputs[1:7],
+            img_metas=img_metas
+        )
 
         test_output = {
             'pred': pred,
-            'gt_occ': gt_occ
+            'gt_occ': gt_occ,
+            'projected_gt': projected_gt
         }
 
         return test_output

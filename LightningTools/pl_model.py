@@ -89,6 +89,8 @@ class pl_model(LightningBaseModel):
         output_dict = self.forward(batch)
 
         pred = output_dict['pred'].detach().cpu().numpy()
+        projected_gt = output_dict['projected_gt'].detach().cpu().numpy() \
+            if 'projected_gt' in output_dict else None
         
         if not self.pretrain:
             gt_occ = output_dict['gt_occ']
@@ -119,6 +121,16 @@ class pl_model(LightningBaseModel):
                     print('\n save to {}'.format(save_file))
                     gt_occ.astype(np.uint16).tofile(gt_save_file)
                     print('\n save gt to {}'.format(gt_save_file))
+                
+                if projected_gt is not None:
+                    projected_gt_save_folder = "{}/sequences/{}/projected_gt".format(self.save_path, sequence_id)
+                    os.makedirs(projected_gt_save_folder, exist_ok=True)
+                    projected_gt_map = create_colored_segmentation_map(projected_gt, SEMANTIC_KITTI_COLORS)
+                    for i in range(projected_gt.shape[0]):
+                        projected_gt_save_file = os.path.join(projected_gt_save_folder, "{}.png".format(frame_id))
+                        projected_gt_img = Image.fromarray(projected_gt_map[i], mode='RGBA')
+                        projected_gt_img.save(projected_gt_save_file)
+                        print('\n save projected gt to {}'.format(projected_gt_save_file))
             else:
                 sequence_id = batch['img_metas']['sequence'][0]
                 frame_id = batch['img_metas']['frame_id']
