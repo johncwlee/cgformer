@@ -6,21 +6,24 @@ from mmdet.datasets.builder import PIPELINES
 from .learning_map import learning_map
 
 @PIPELINES.register_module()
-class LoadDenseAnnotations:
-    def __init__(self, dataset='kitti360', is_train=True):
+class MapDenseAnnotations:
+    """
+    Transform dense 2D semantic labels using a pre-defined mapping.
+
+    Args:
+        dataset (str): The dataset name.
+    """
+    def __init__(self, dataset):
         self.dataset = dataset
         assert self.dataset in ['kitti360', 'ssckitti360'], \
             f"dataset must be one of ['kitti360', 'ssckitti360'], but got {self.dataset}"
-        self.is_train = is_train
-        
-        self.learning_map = learning_map['kitti360']
+        self.learning_map = learning_map[self.dataset]
     
     def __call__(self, results):
-        assert 'seg_gt_path' in results, "seg_gt_path is not in results"
-        seg_gt_path = results['seg_gt_path']
-        seg_gt = np.array(Image.open(seg_gt_path), dtype=np.uint8)
+        assert 'gt_semantics' in results, "gt_semantics is not in results"
+        seg_gt = results['gt_semantics']
         seg_gt = np.vectorize(self.learning_map.__getitem__)(seg_gt)
-        results['seg_gt'] = torch.from_numpy(seg_gt)
+        results['gt_semantics'] = torch.from_numpy(seg_gt)
         
         return results
 

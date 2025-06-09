@@ -82,5 +82,6 @@ learning_map = {
         43: 5,    # "unknown vehicle" to "other-vehicle" -----------------------mapped
         44: 18,   # "unknown object" to "other-object" -------------------------mapped
         -1: -1,   # "license plate" to ignore ----------------------------------mapped
+        255: 255,  # "ignore" to ignore -----------------------------------------mapped
     }
 }

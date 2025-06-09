@@ -110,14 +110,16 @@ class KITTI360Dataset(Dataset):
             frame_id = info['frame_id'],
         )
 
-        # load images, intrins, extrins, voxels
+        # load images, segmentation maps,intrins, extrins, voxels
         image_paths = []
+        seg_gt_paths = []
         lidar2cam_rts = []
         lidar2img_rts = []
         cam_intrinsics = []
 
         for cam_type in self.camera_used:
             image_paths.append(info['img_{}_path'.format(int(cam_type))])
+            seg_gt_paths.append(info['seg_gt_{}_path'.format(int(cam_type))])
             lidar2img_rts.append(info['proj_matrix_{}'.format(int(cam_type))])
             cam_intrinsics.append(info['P{}'.format(int(cam_type))])
             lidar2cam_rts.append(info['T_velo_2_cam'])
@@ -128,13 +130,13 @@ class KITTI360Dataset(Dataset):
         input_dict.update(
             dict(
                 img_filename=image_paths,
+                seg_gt_filename=seg_gt_paths,
                 lidar2img=lidar2img_rts,
                 cam_intrinsic=cam_intrinsics,
                 lidar2cam=lidar2cam_rts,
                 focal_length=focal_length,
                 baseline=baseline
             ))
-        input_dict['seg_gt_path'] = info['seg_gt_path']
         input_dict['stereo_depth_path'] = info['stereo_depth_path']
         input_dict['gt_occ'] = None #* No occ labels for KITTI360
 
@@ -160,7 +162,8 @@ class KITTI360Dataset(Dataset):
                 img_id = id_path.split("/")[-1].split(".")[0]
                 img_2_path = os.path.join(img_base_path, 'image_00', 'data_rect', img_id + '.png')
                 img_3_path = os.path.join(img_base_path, 'image_01', 'data_rect', img_id + '.png')
-                seg_gt_path = os.path.join(seg_gt_base_path, 'image_00', 'semantic', img_id + '.png')
+                seg_gt_2_path = os.path.join(seg_gt_base_path, 'image_00', 'semantic', img_id + '.png')
+                seg_gt_3_path = os.path.join(seg_gt_base_path, 'image_01', 'semantic', img_id + '.png')
                 stereo_depth_path = os.path.join(self.stereo_depth_root, "sequences", sequence, img_id + '.npy')
                 
                 scans.append(
@@ -173,7 +176,8 @@ class KITTI360Dataset(Dataset):
                         "T_velo_2_cam": T_velo_2_cam,
                         "proj_matrix_2": proj_matrix_2,
                         "proj_matrix_3": proj_matrix_3,
-                        "seg_gt_path": seg_gt_path,
+                        "seg_gt_2_path": seg_gt_2_path,
+                        "seg_gt_3_path": seg_gt_3_path,
                         "stereo_depth_path": stereo_depth_path
                     })
         

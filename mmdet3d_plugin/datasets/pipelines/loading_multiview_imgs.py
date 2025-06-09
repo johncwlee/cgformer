@@ -21,13 +21,15 @@ class LoadMultiViewImageFromFiles(object):
             is_train=False,
             img_norm_cfg=None,
             load_stereo_depth=False,
-            color_jitter=(0.4, 0.4, 0.4)
+            color_jitter=(0.4, 0.4, 0.4),
+            ignore_label=255,
         ):
         super().__init__()
 
         self.is_train = is_train
         self.data_config = data_config
         self.img_norm_cfg = img_norm_cfg
+        self.ignore_label = ignore_label
 
         self.load_stereo_depth = load_stereo_depth
         self.color_jitter = (
@@ -83,13 +85,9 @@ class LoadMultiViewImageFromFiles(object):
 
         return resize, resize_dims, crop, flip, rotate
 
-    def img_transform(self, img, post_rot, post_tran,
-                      resize, resize_dims, crop,
-                      flip, rotate):
-        # adjust image
-        img = self.img_transform_core(img, resize_dims, crop, flip, rotate)
-
-        # post-homography transformation
+    def post_homo_transform(self, post_rot, post_tran, resize, crop, flip, rotate):
+        post_rot = post_rot.clone()
+        post_tran = post_tran.clone()
         post_rot *= resize
         post_tran -= torch.Tensor(crop[:2])
         if flip:
@@ -102,6 +100,16 @@ class LoadMultiViewImageFromFiles(object):
         b = A.matmul(-b) + b
         post_rot = A.matmul(post_rot)
         post_tran = A.matmul(post_tran) + b
+        return post_rot, post_tran
+
+    def img_transform(self, img, post_rot, post_tran,
+                      resize, resize_dims, crop,
+                      flip, rotate):
+        #? adjust image
+        img = self.img_transform_core(img, resize_dims, crop, flip, rotate)
+
+        #? post-homography transformation
+        post_rot, post_tran = self.post_homo_transform(post_rot, post_tran, resize, crop, flip, rotate)
 
         return img, post_rot, post_tran
 
@@ -114,9 +122,31 @@ class LoadMultiViewImageFromFiles(object):
         img = img.rotate(rotate)
         
         return img
+
+    def seg_gt_transform_core(self, img, resize_dims, crop, flip, rotate):
+        #? adjust segmentation map
+        img = img.resize(resize_dims, resample=Image.NEAREST)
+
+        #? Crop & insert ignore label if needed
+        fW = crop[2] - crop[0]
+        fH = crop[3] - crop[1]
+        img = img.transform(
+            (fW, fH),
+            Image.AFFINE,
+            (1, 0, crop[0], 0, 1, crop[1]),
+            resample=Image.NEAREST,
+            fillcolor=self.ignore_label,
+        )
+        
+        if flip:
+            img = img.transpose(method=Image.FLIP_LEFT_RIGHT)
+        img = img.rotate(rotate, fillcolor=self.ignore_label)
+        
+        return img
     
     def get_inputs(self, results, flip=None, scale=None):
         img_filenames = results['img_filename']
+        seg_gt_filenames = results['seg_gt_filename']
 
         focal_length = results['focal_length']
         baseline = results['baseline']
@@ -126,6 +156,8 @@ class LoadMultiViewImageFromFiles(object):
         for i in range(len(img_filenames)):
             img_filename = img_filenames[i]
             img = Image.open(img_filename).convert('RGB')
+            seg_gt_filename = seg_gt_filenames[i]
+            seg_gt = Image.open(seg_gt_filename)
 
             # perform image-view augmentation
             post_rot = torch.eye(2)
@@ -138,6 +170,9 @@ class LoadMultiViewImageFromFiles(object):
                 img, post_rot, post_trans, resize=resize, 
                 resize_dims=resize_dims, crop=crop, flip=flip, rotate=rotate
             )
+            seg_gt = self.seg_gt_transform_core(seg_gt, resize_dims=resize_dims, 
+                                                      crop=crop, flip=flip, rotate=rotate)
+            results['gt_semantics'] = np.array(seg_gt)[None, ...]
 
             # for convenience, make augmentation matrices 3x3
             post_tran = torch.zeros(3)
