@@ -13,7 +13,7 @@ class CreateDepthFromLiDAR(object):
     ):
         self.data_root = data_root
         self.dataset = dataset
-        assert self.dataset in ['kitti', 'kitti360']
+        assert self.dataset in ['kitti', 'kitti360', 'ssckitti360']
         if load_seg:
             self.learning_map = learning_map[dataset]
         self.seg_label_root = os.path.join(data_root, 'lidarseg')
@@ -38,7 +38,7 @@ class CreateDepthFromLiDAR(object):
             else:
                 label_points = None
             
-        elif self.dataset == 'kitti360':
+        elif self.dataset in ['ssckitti360', 'kitti360']:
             img_filename = results['img_filename'][0]
             seq_id, _, _, filename = img_filename.split("/")[-4:]
             lidar_filename = os.path.join(self.data_root, 'data_3d_raw', seq_id, 'velodyne_points', 'data', filename.replace(".png", ".bin"))
@@ -68,6 +68,7 @@ class CreateDepthFromLiDAR(object):
         gt_depths = []
         gt_semantics = []
         for img_index in range(imgs.shape[0]):
+            #? Get depth from LiDAR points
             gt_depth = torch.zeros((img_h, img_w))
             projected_points_i = projected_points[:, img_index]
             valid_mask_i = valid_mask[:, img_index]
@@ -78,6 +79,8 @@ class CreateDepthFromLiDAR(object):
             # fill in
             gt_depth[valid_points_i[:, 1].round().long(), 
                      valid_points_i[:, 0].round().long()] = valid_points_i[:, 2]
+            
+            #? Get semantic from LiDAR points
             if label_points is not None:
                 gt_semantic = torch.zeros((img_h, img_w))
                 gt_semantic[valid_points_i[:, 1].round().long(), 

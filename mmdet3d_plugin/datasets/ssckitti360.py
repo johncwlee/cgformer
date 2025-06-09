@@ -6,19 +6,23 @@ from torch.utils.data import Dataset
 from mmdet.datasets.pipelines import Compose
 
 @DATASETS.register_module()
-class KITTI360Dataset(Dataset):
+class SSCKITTI360Dataset(Dataset):
     def __init__(
         self,
         data_root,
         stereo_depth_root,
+        ann_file,
         pipeline,
         split,
         camera_used,
+        occ_size,
         pc_range,
-        test_mode=False
+        test_mode=False,
+        load_continuous=False
     ):
         super().__init__()
 
+        self.load_continuous = load_continuous
         self.splits = {
             "train": [
                 "2013_05_28_drive_0000_sync", "2013_05_28_drive_0002_sync", "2013_05_28_drive_0003_sync",
@@ -33,9 +37,11 @@ class KITTI360Dataset(Dataset):
 
         self.data_root = data_root
         self.stereo_depth_root = stereo_depth_root
+        self.ann_file = ann_file
         self.test_mode = test_mode
-        self.data_infos = self.load_annotations()
+        self.data_infos = self.load_annotations(self.ann_file)
 
+        self.occ_size = occ_size
         self.pc_range = pc_range
         self.camera_map = {'left': '2', 'right': '3'}
         self.camera_used = [self.camera_map[camera] for camera in camera_used]
@@ -101,10 +107,11 @@ class KITTI360Dataset(Dataset):
             "T_velo_2_cam": T_velo_2_cam,
             "proj_matrix_2": proj_matrix_2,
             "proj_matrix_3": proj_matrix_3,
-            "seg_gt_path": seg_gt_path,
+            "voxel_path": voxel_path,
             "stereo_depth_path": stereo_depth_path
         '''
         input_dict = dict(
+            occ_size = np.array(self.occ_size),
             pc_range = np.array(self.pc_range),
             sequence = info['sequence'],
             frame_id = info['frame_id'],
@@ -134,13 +141,13 @@ class KITTI360Dataset(Dataset):
                 focal_length=focal_length,
                 baseline=baseline
             ))
-        input_dict['seg_gt_path'] = info['seg_gt_path']
         input_dict['stereo_depth_path'] = info['stereo_depth_path']
-        input_dict['gt_occ'] = None #* No occ labels for KITTI360
+        # gt_occ is None for test-set
+        input_dict['gt_occ'] = self.get_ann_info(index, key='voxel_path')
 
         return input_dict
     
-    def load_annotations(self):
+    def load_annotations(self, ann_file=None):
         scans = []
         for sequence in self.sequences:
             calib = self.read_calib()
@@ -150,18 +157,24 @@ class KITTI360Dataset(Dataset):
             proj_matrix_2 = P2 @ T_velo_2_cam
             proj_matrix_3 = P3 @ T_velo_2_cam
 
-            
+            voxel_base_path = os.path.join(self.ann_file, sequence)
             img_base_path = os.path.join(self.data_root, 'data_2d_raw', sequence)
-            seg_gt_base_path = os.path.join(self.data_root, 'data_2d_semantics', sequence)
-            #* Use semantic path since there is more raw data than semantic data
-            id_base_path = os.path.join(self.data_root, 'data_2d_semantics', sequence, 'image_00', 'semantic', '*.png')
+
+            if self.load_continuous:
+                id_base_path = os.path.join(self.data_root, 'data_2d_raw', sequence, 'image_00', 'data_rect', '*.png')
+            else:
+                id_base_path = os.path.join(self.data_root, 'data_2d_raw', sequence, 'voxels', '*.bin')
             
             for id_path in glob.glob(id_base_path):
                 img_id = id_path.split("/")[-1].split(".")[0]
                 img_2_path = os.path.join(img_base_path, 'image_00', 'data_rect', img_id + '.png')
                 img_3_path = os.path.join(img_base_path, 'image_01', 'data_rect', img_id + '.png')
-                seg_gt_path = os.path.join(seg_gt_base_path, 'image_00', 'semantic', img_id + '.png')
+                voxel_path = os.path.join(voxel_base_path, img_id + '_1_1.npy')
+
                 stereo_depth_path = os.path.join(self.stereo_depth_root, "sequences", sequence, img_id + '.npy')
+
+                if not os.path.exists(voxel_path):
+                    voxel_path = None
                 
                 scans.append(
                     {   "img_2_path": img_2_path,
@@ -173,11 +186,16 @@ class KITTI360Dataset(Dataset):
                         "T_velo_2_cam": T_velo_2_cam,
                         "proj_matrix_2": proj_matrix_2,
                         "proj_matrix_3": proj_matrix_3,
-                        "seg_gt_path": seg_gt_path,
+                        "voxel_path": voxel_path,
+                        # "voxel_1_2_path": voxel_1_2_path,
                         "stereo_depth_path": stereo_depth_path
                     })
         
         return scans
+
+    def get_ann_info(self, index, key='voxel_path'):
+        info = self.data_infos[index][key]
+        return None if info is None else np.load(info)
     
     @staticmethod
     def read_calib(calib_path=None):
