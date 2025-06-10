@@ -20,6 +20,7 @@ class LoadMultiViewImageFromFiles(object):
             data_config,
             is_train=False,
             img_norm_cfg=None,
+            load_seg=False,
             load_stereo_depth=False,
             color_jitter=(0.4, 0.4, 0.4),
             ignore_label=255,
@@ -30,7 +31,7 @@ class LoadMultiViewImageFromFiles(object):
         self.data_config = data_config
         self.img_norm_cfg = img_norm_cfg
         self.ignore_label = ignore_label
-
+        self.load_seg = load_seg
         self.load_stereo_depth = load_stereo_depth
         self.color_jitter = (
             transforms.ColorJitter(*color_jitter) if color_jitter else None
@@ -146,7 +147,7 @@ class LoadMultiViewImageFromFiles(object):
     
     def get_inputs(self, results, flip=None, scale=None):
         img_filenames = results['img_filename']
-        seg_gt_filenames = results['seg_gt_filename']
+        seg_gt_filenames = results.get('seg_gt_filename', None)
 
         focal_length = results['focal_length']
         baseline = results['baseline']
@@ -156,8 +157,11 @@ class LoadMultiViewImageFromFiles(object):
         for i in range(len(img_filenames)):
             img_filename = img_filenames[i]
             img = Image.open(img_filename).convert('RGB')
-            seg_gt_filename = seg_gt_filenames[i]
-            seg_gt = Image.open(seg_gt_filename)
+            if seg_gt_filenames is not None:
+                seg_gt_filename = seg_gt_filenames[i]
+                seg_gt = Image.open(seg_gt_filename)
+            else:
+                seg_gt = None
 
             # perform image-view augmentation
             post_rot = torch.eye(2)
@@ -170,9 +174,10 @@ class LoadMultiViewImageFromFiles(object):
                 img, post_rot, post_trans, resize=resize, 
                 resize_dims=resize_dims, crop=crop, flip=flip, rotate=rotate
             )
-            seg_gt = self.seg_gt_transform_core(seg_gt, resize_dims=resize_dims, 
+            if seg_gt is not None:
+                seg_gt = self.seg_gt_transform_core(seg_gt, resize_dims=resize_dims, 
                                                       crop=crop, flip=flip, rotate=rotate)
-            results['gt_semantics'] = np.array(seg_gt)[None, ...]
+                results['gt_semantics'] = np.array(seg_gt)[None, ...]
 
             # for convenience, make augmentation matrices 3x3
             post_tran = torch.zeros(3)

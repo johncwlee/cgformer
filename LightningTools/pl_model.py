@@ -28,10 +28,12 @@ class pl_model(LightningBaseModel):
         self.test_mapping = config['test_mapping']
         self.pretrain = config['pretrain']
 
-        self.train_metrics = SSCMetrics(config['num_class'])
-        self.val_metrics = SSCMetrics(config['num_class'])
+        self.train_metrics = SSCMetrics(config['num_class']) if not self.pretrain \
+                            else SemanticSegmentationMetrics(self.num_class)
+        self.val_metrics = SSCMetrics(config['num_class']) if not self.pretrain \
+                            else SemanticSegmentationMetrics(self.num_class)
         self.test_metrics = SSCMetrics(config['num_class']) if not self.pretrain \
-                            else SemanticSegmentationMetrics(config['num_class'])
+                            else SemanticSegmentationMetrics(self.num_class)
     
     def forward(self, data_dict):
         return self.model(data_dict)
@@ -53,11 +55,14 @@ class pl_model(LightningBaseModel):
             on_epoch=True,
             sync_dist=True)
         
+        pred = output_dict['pred'].detach().cpu().numpy()
+        
         if not self.pretrain:
-            pred = output_dict['pred'].detach().cpu().numpy()
-            gt_occ = output_dict['gt_occ'].detach().cpu().numpy()
-            
-            self.train_metrics.add_batch(pred, gt_occ)
+            gt = output_dict['gt_occ'].detach().cpu().numpy()
+        else:
+            gt = output_dict['gt_semantics'].detach().cpu().numpy()
+        
+        self.train_metrics.add_batch(pred, gt)
 
         return loss
     
@@ -65,11 +70,14 @@ class pl_model(LightningBaseModel):
         
         output_dict = self.forward(batch)
         
+        pred = output_dict['pred'].detach().cpu().numpy()
+        
         if not self.pretrain:
-            pred = output_dict['pred'].detach().cpu().numpy()
-            gt_occ = output_dict['gt_occ'].detach().cpu().numpy()
-
-            self.val_metrics.add_batch(pred, gt_occ)
+            gt = output_dict['gt_occ'].detach().cpu().numpy()
+        else:
+            gt = output_dict['gt_semantics'].detach().cpu().numpy()
+        
+        self.val_metrics.add_batch(pred, gt)
     
     def validation_epoch_end(self, outputs):
         metric_list = [("train", self.train_metrics), ("val", self.val_metrics)]
@@ -79,10 +87,16 @@ class pl_model(LightningBaseModel):
         for prefix, metric in metrics_list:
             stats = metric.get_stats()
 
-            self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_ssc_mean"], dtype=torch.float32), sync_dist=True)
-            self.log("{}/IoU".format(prefix), torch.tensor(stats["iou"], dtype=torch.float32), sync_dist=True)
-            self.log("{}/Precision".format(prefix), torch.tensor(stats["precision"], dtype=torch.float32), sync_dist=True)
-            self.log("{}/Recall".format(prefix), torch.tensor(stats["recall"], dtype=torch.float32), sync_dist=True)
+            if not self.pretrain:
+                self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_ssc_mean"], dtype=torch.float32), sync_dist=True)
+                self.log("{}/IoU".format(prefix), torch.tensor(stats["iou"], dtype=torch.float32), sync_dist=True)
+                self.log("{}/Precision".format(prefix), torch.tensor(stats["precision"], dtype=torch.float32), sync_dist=True)
+                self.log("{}/Recall".format(prefix), torch.tensor(stats["recall"], dtype=torch.float32), sync_dist=True)
+            else:
+                self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_mean"], dtype=torch.float32), sync_dist=True)
+                #? Add IoU for each class
+                for name, iou in zip(self.class_names[1:], stats['iou_class'][1:]):
+                    self.log("{}/{}".format(prefix, name), torch.tensor(iou, dtype=torch.float32), sync_dist=True)
             metric.reset()
     
     def test_step(self, batch, batch_idx):
@@ -172,10 +186,10 @@ class pl_model(LightningBaseModel):
                 self.log("{}/IoU".format(prefix), torch.tensor(stats["iou"], dtype=torch.float32), sync_dist=True)
                 self.log("{}/Precision".format(prefix), torch.tensor(stats["precision"], dtype=torch.float32), sync_dist=True)
                 self.log("{}/Recall".format(prefix), torch.tensor(stats["recall"], dtype=torch.float32), sync_dist=True)
-                metric.reset()
             else:
-                for name, iou in zip(self.class_names, stats['iou_class']):
-                    print(name + ":", iou)
+                #? Add IoU for each class
+                for name, iou in zip(self.class_names[1:], stats['iou_class'][1:]):
+                    self.log("{}/{}".format(prefix, name), torch.tensor(iou, dtype=torch.float32), sync_dist=True)
 
                 self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_mean"], dtype=torch.float32), sync_dist=True)
-                metric.reset()
+            metric.reset()

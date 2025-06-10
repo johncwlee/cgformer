@@ -86,7 +86,9 @@ class CGFormerSegDepth(BaseModule):
         losses.update(losses_seg)
 
         train_output = {
-            'losses': losses
+            'losses': losses,
+            'pred': segmentation,
+            'gt_semantics': target
         }
 
         return train_output
@@ -94,6 +96,7 @@ class CGFormerSegDepth(BaseModule):
     def forward_test(self, data_dict):
         img_inputs = data_dict['img_inputs']
         img_metas = data_dict['img_metas']
+        target = data_dict['gt_semantics']
         
         if self.depth_anything is not None:
             img_metas['stereo_depth'] = self.depth_anything(img_inputs[0])
@@ -104,7 +107,8 @@ class CGFormerSegDepth(BaseModule):
         
         test_output = {
             'pred': segmentation,
-            'depth': depth
+            'depth': depth,
+            'gt_semantics': target
         }
         return test_output
     

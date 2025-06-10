@@ -152,22 +152,14 @@ class SemanticSegmentationMetrics:
         self.tps = np.zeros(self.n_classes)
         self.fps = np.zeros(self.n_classes)
         self.fns = np.zeros(self.n_classes)
-
-        self.iou = 0
-        self.count = 1e-8
-        self.iou_class = np.zeros(self.n_classes, dtype=np.float32)
-        self.cnt_class = np.zeros(self.n_classes, dtype=np.float32)
     
     def add_batch(self, y_pred, y_true):
         """
         Args:
-            y_pred: Predictions of shape (B, num_classes, H, W) - logits or probabilities
-            y_true: Ground truth of shape (B, 1, H, W) - class indices
-            nonempty: Optional mask for non-empty regions
-            nonsurface: Optional mask for non-surface regions
+            y_pred: Predictions of shape (B, num_classes, H, W) as logits or probabilities,
+                    or (B, H, W) as class indices.
+            y_true: Ground truth of shape (B, 1, H, W) or (B, H, W) as class indices.
         """
-        self.count += 1
-        
         # Convert predictions from (B, C, H, W) to (B, H, W) class indices
         if len(y_pred.shape) == 4 and y_pred.shape[1] == self.n_classes:
             y_pred = np.argmax(y_pred, axis=1)  # (B, H, W)
@@ -176,16 +168,16 @@ class SemanticSegmentationMetrics:
         if len(y_true.shape) == 4 and y_true.shape[1] == 1:
             y_true = y_true.squeeze(1)  # (B, H, W)
         
-        # Create base mask for valid pixels
+        # Create base mask for valid pixels (ignore class 255)
         mask = y_true != 255
 
         # Compute per-class semantic segmentation metrics
-        tp_sum, fp_sum, fn_sum = self.get_score_semantic(
+        tp, fp, fn = self.get_score_semantic(
             y_pred, y_true, mask
         )
-        self.tps += tp_sum
-        self.fps += fp_sum
-        self.fns += fn_sum
+        self.tps += tp
+        self.fps += fp
+        self.fns += fn
     
     def get_stats(self):
         """Calculate and return all metrics"""
@@ -197,44 +189,22 @@ class SemanticSegmentationMetrics:
             "iou_mean": np.mean(iou_class[1:]),  # Exclude background class (class 0)
         }
     
-    def get_score_semantic(self, predict, target, mask=None):
-        """Compute per-class semantic segmentation metrics"""
-        target = np.copy(target)
-        predict = np.copy(predict)
-        _bs = predict.shape[0]
+    def get_score_semantic(self, predict, target, mask):
+        """Compute per-class semantic segmentation metrics in a vectorized way."""
         _C = self.n_classes
 
-        # Ignore invalid pixels
-        predict[target == 255] = 0
-        target[target == 255] = 0
+        # Apply mask and flatten
+        y_pred = predict[mask]
+        y_true = target[mask]
+
+        tp = np.zeros(_C, dtype=np.int32)
+        fp = np.zeros(_C, dtype=np.int32)
+        fn = np.zeros(_C, dtype=np.int32)
+
+        # Compute TP, FP, FN for each class
+        for j in range(_C):
+            tp[j] = np.sum(np.logical_and(y_true == j, y_pred == j))
+            fp[j] = np.sum(np.logical_and(y_true != j, y_pred == j))
+            fn[j] = np.sum(np.logical_and(y_true == j, y_pred != j))
         
-        # Flatten spatial dimensions
-        target = target.reshape(_bs, -1)  # (B, H*W)
-        predict = predict.reshape(_bs, -1)  # (B, H*W)
-
-        tp_sum = np.zeros(_C, dtype=np.int32)
-        fp_sum = np.zeros(_C, dtype=np.int32)
-        fn_sum = np.zeros(_C, dtype=np.int32)
-
-        for idx in range(_bs):
-            y_true = target[idx, :]
-            y_pred = predict[idx, :]
-
-            # Apply mask if provided
-            if mask is not None:
-                mask_idx = mask[idx, :].reshape(-1)
-                valid_pixels = np.logical_and(mask_idx, y_true != 255)
-                y_pred = y_pred[valid_pixels]
-                y_true = y_true[valid_pixels]
-            
-            # Compute TP, FP, FN for each class
-            for j in range(_C):
-                tp = np.sum(np.logical_and(y_true == j, y_pred == j))
-                fp = np.sum(np.logical_and(y_true != j, y_pred == j))
-                fn = np.sum(np.logical_and(y_true == j, y_pred != j))
-
-                tp_sum[j] += tp
-                fp_sum[j] += fp
-                fn_sum[j] += fn
-        
-        return tp_sum, fp_sum, fn_sum
+        return tp, fp, fn

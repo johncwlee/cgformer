@@ -72,7 +72,7 @@ class plugin_segmentation_head(nn.Module):
             loss_value += criterion(pred_points.unsqueeze(0), target_points.unsqueeze(0).long())
 
         loss_dict = {}
-        loss_dict['loss_voxel_ce'] = self.loss_seg_weight * loss_value / b
+        loss_dict['loss_seg_ce'] = self.loss_seg_weight * loss_value / b
         return loss_dict
             
 
