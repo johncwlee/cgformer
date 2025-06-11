@@ -1,6 +1,8 @@
 data_root = '/home/data/SSCBenchKITTI360'
 ann_file = '/home/data/SSCBenchKITTI360/labels'
 stereo_depth_root = '/home/data/SSCBenchKITTI360/depth'
+mapping_root = './kitti360_filenames'
+seg_gt_root = '/home/data/KITTI-360/data_2d_semantics'
 camera_used = ['left']
 
 dataset_type = 'SSCKITTI360Dataset'
@@ -59,11 +61,14 @@ trainset_config=dict(
     stereo_depth_root=stereo_depth_root,
     data_root=data_root,
     ann_file=ann_file,
+    seg_gt_root=seg_gt_root,
+    file_mapping_root=mapping_root,
     pipeline=train_pipeline,
     split='train',
     camera_used=camera_used,
     occ_size=occ_size,
     pc_range=point_cloud_range,
+    load_seg=False,
     test_mode=False,
 )
 
@@ -82,11 +87,14 @@ testset_config=dict(
     stereo_depth_root=stereo_depth_root,
     data_root=data_root,
     ann_file=ann_file,
+    seg_gt_root=seg_gt_root,
+    file_mapping_root=mapping_root,
     pipeline=test_pipeline,
     split='test',
     camera_used=camera_used,
     occ_size=occ_size,
-    pc_range=point_cloud_range
+    pc_range=point_cloud_range,
+    load_seg=False
 )
 
 data = dict(
