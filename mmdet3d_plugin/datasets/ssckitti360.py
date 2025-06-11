@@ -1,6 +1,7 @@
 import os
 import glob
 import numpy as np
+import pandas as pd
 from mmdet.datasets import DATASETS
 from torch.utils.data import Dataset
 from mmdet.datasets.pipelines import Compose
@@ -12,11 +13,14 @@ class SSCKITTI360Dataset(Dataset):
         data_root,
         stereo_depth_root,
         ann_file,
+        seg_gt_root,
+        file_mapping_root,
         pipeline,
         split,
         camera_used,
         occ_size,
         pc_range,
+        load_seg=False,
         test_mode=False,
         load_continuous=False
     ):
@@ -38,6 +42,9 @@ class SSCKITTI360Dataset(Dataset):
         self.data_root = data_root
         self.stereo_depth_root = stereo_depth_root
         self.ann_file = ann_file
+        self.seg_gt_root = seg_gt_root
+        self.file_mapping_root = file_mapping_root
+        self.load_seg = load_seg
         self.test_mode = test_mode
         self.data_infos = self.load_annotations(self.ann_file)
 
@@ -108,6 +115,8 @@ class SSCKITTI360Dataset(Dataset):
             "proj_matrix_2": proj_matrix_2,
             "proj_matrix_3": proj_matrix_3,
             "voxel_path": voxel_path,
+            "seg_gt_2_path": seg_gt_2_path,
+            "seg_gt_3_path": seg_gt_3_path,
             "stereo_depth_path": stereo_depth_path
         '''
         input_dict = dict(
@@ -117,14 +126,16 @@ class SSCKITTI360Dataset(Dataset):
             frame_id = info['frame_id'],
         )
 
-        # load images, intrins, extrins, voxels
+        # load images, segmentation maps, intrins, extrins, voxels
         image_paths = []
+        seg_gt_paths = []
         lidar2cam_rts = []
         lidar2img_rts = []
         cam_intrinsics = []
 
         for cam_type in self.camera_used:
             image_paths.append(info['img_{}_path'.format(int(cam_type))])
+            seg_gt_paths.append(info['seg_gt_{}_path'.format(int(cam_type))])
             lidar2img_rts.append(info['proj_matrix_{}'.format(int(cam_type))])
             cam_intrinsics.append(info['P{}'.format(int(cam_type))])
             lidar2cam_rts.append(info['T_velo_2_cam'])
@@ -135,6 +146,7 @@ class SSCKITTI360Dataset(Dataset):
         input_dict.update(
             dict(
                 img_filename=image_paths,
+                seg_gt_filename=seg_gt_paths,
                 lidar2img=lidar2img_rts,
                 cam_intrinsic=cam_intrinsics,
                 lidar2cam=lidar2cam_rts,
@@ -159,6 +171,9 @@ class SSCKITTI360Dataset(Dataset):
 
             voxel_base_path = os.path.join(self.ann_file, sequence)
             img_base_path = os.path.join(self.data_root, 'data_2d_raw', sequence)
+            #? Read file mapping csv to get the corresponding seg_gt_path
+            file_map_path = os.path.join(self.file_mapping_root, sequence+".csv")
+            file_map = pd.read_csv(file_map_path)
 
             if self.load_continuous:
                 id_base_path = os.path.join(self.data_root, 'data_2d_raw', sequence, 'image_00', 'data_rect', '*.png')
@@ -172,6 +187,18 @@ class SSCKITTI360Dataset(Dataset):
                 voxel_path = os.path.join(voxel_base_path, img_id + '_1_1.npy')
 
                 stereo_depth_path = os.path.join(self.stereo_depth_root, "sequences", sequence, img_id + '.npy')
+                
+                #? Load gt semantics
+                if self.load_seg:
+                    filename_kitti360 = file_map.loc[file_map['sscbench_filename'] == img_id+".png", 'kitti360_filename'].values[0]
+                    seg_gt_2_path = os.path.join(self.seg_gt_root, 
+                                                 sequence, 
+                                                 "image_00/semantic", 
+                                                 filename_kitti360)
+                    seg_gt_3_path = os.path.join(self.seg_gt_root, 
+                                                 sequence, 
+                                                 "image_01/semantic", 
+                                                 filename_kitti360)
 
                 if not os.path.exists(voxel_path):
                     voxel_path = None
@@ -187,8 +214,9 @@ class SSCKITTI360Dataset(Dataset):
                         "proj_matrix_2": proj_matrix_2,
                         "proj_matrix_3": proj_matrix_3,
                         "voxel_path": voxel_path,
-                        # "voxel_1_2_path": voxel_1_2_path,
-                        "stereo_depth_path": stereo_depth_path
+                        "stereo_depth_path": stereo_depth_path,
+                        "seg_gt_2_path": seg_gt_2_path,
+                        "seg_gt_3_path": seg_gt_3_path
                     })
         
         return scans

@@ -1,6 +1,8 @@
 data_root = '/home/data/SSCBenchKITTI360'
 ann_file = '/home/data/SSCBenchKITTI360/labels'
 stereo_depth_root = '/home/data/SSCBenchKITTI360/depth'
+mapping_root = './kitti360_filenames'
+seg_gt_root = '/home/data/KITTI-360/data_2d_semantics'
 camera_used = ['left']
 
 dataset_type = 'SSCKITTI360Dataset'
@@ -48,9 +50,10 @@ train_pipeline = [
     dict(type='LoadMultiViewImageFromFiles', data_config=data_config, load_stereo_depth=True,
          is_train=True, color_jitter=(0.4, 0.4, 0.4)),
     dict(type='CreateDepthFromLiDAR', data_root=data_root, dataset='kitti360', load_seg=False),
+    dict(type='MapDenseAnnotations', dataset='kitti360'),
     dict(type='LoadAnnotationOcc', bda_aug_conf=bda_aug_conf, apply_bda=False,
             is_train=True, point_cloud_range=point_cloud_range),
-    dict(type='CollectData', keys=['img_inputs', 'gt_occ'], 
+    dict(type='CollectData', keys=['img_inputs', 'gt_semantics', 'gt_occ'], 
             meta_keys=['pc_range', 'occ_size', 'raw_img', 'stereo_depth', 'focal_length', 'baseline', 'img_shape', 'gt_depths']),
 ]
 
@@ -59,11 +62,14 @@ trainset_config=dict(
     stereo_depth_root=stereo_depth_root,
     data_root=data_root,
     ann_file=ann_file,
+    seg_gt_root=seg_gt_root,
+    file_mapping_root=mapping_root,
     pipeline=train_pipeline,
     split='train',
     camera_used=camera_used,
     occ_size=occ_size,
     pc_range=point_cloud_range,
+    load_seg=True,
     test_mode=False,
 )
 
@@ -71,6 +77,7 @@ test_pipeline = [
     dict(type='LoadMultiViewImageFromFiles', data_config=data_config, load_stereo_depth=True,
          is_train=False, color_jitter=None),
     dict(type='CreateDepthFromLiDAR', data_root=data_root, dataset='kitti360', load_seg=False),
+    dict(type='MapDenseAnnotations', dataset='kitti360'),
     dict(type='LoadAnnotationOcc', bda_aug_conf=bda_aug_conf, apply_bda=False,
             is_train=False, point_cloud_range=point_cloud_range),
     dict(type='CollectData', keys=['img_inputs', 'gt_occ'],  
@@ -82,11 +89,14 @@ testset_config=dict(
     stereo_depth_root=stereo_depth_root,
     data_root=data_root,
     ann_file=ann_file,
+    seg_gt_root=seg_gt_root,
+    file_mapping_root=mapping_root,
     pipeline=test_pipeline,
     split='test',
     camera_used=camera_used,
     occ_size=occ_size,
-    pc_range=point_cloud_range
+    pc_range=point_cloud_range,
+    load_seg=True
 )
 
 data = dict(
@@ -131,7 +141,7 @@ _num_layers_self_ = 2
 _num_points_self_ = 8
 
 model = dict(
-    type='CGFormer',
+    type='CGFormerSegConsistency',
     img_backbone=dict(
         type='CustomEfficientNet',
         arch='b7',
@@ -157,6 +167,19 @@ model = dict(
         grid_config=grid_config,
         loss_depth_type='kld',
         loss_depth_weight=0.0001,
+    ),
+    plugin_head=dict(
+        type='plugin_segmentation_head',
+        in_channels=numC_Trans,
+        out_channel_list=[128, 64, 32],
+        num_class=num_class,
+        loss_seg_weight=0.0001
+    ),
+    consistency_head=dict(
+        type='ConsistencyHead',
+        learnable_fuse=False,
+        temperature=1.0,
+        loss_weight=1.0
     ),
     img_view_transformer=dict(
         type='LSSViewTransformer',

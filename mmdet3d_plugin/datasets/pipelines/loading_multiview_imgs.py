@@ -159,7 +159,10 @@ class LoadMultiViewImageFromFiles(object):
             img = Image.open(img_filename).convert('RGB')
             if seg_gt_filenames is not None:
                 seg_gt_filename = seg_gt_filenames[i]
-                seg_gt = Image.open(seg_gt_filename)
+                try:
+                    seg_gt = Image.open(seg_gt_filename)
+                except Exception as e:
+                    seg_gt = None
             else:
                 seg_gt = None
 
@@ -178,6 +181,10 @@ class LoadMultiViewImageFromFiles(object):
                 seg_gt = self.seg_gt_transform_core(seg_gt, resize_dims=resize_dims, 
                                                       crop=crop, flip=flip, rotate=rotate)
                 results['gt_semantics'] = np.array(seg_gt)[None, ...]
+            else:
+                seg_gt = np.zeros((img.height, img.width))
+                seg_gt[seg_gt == 0] = 255
+                results['gt_semantics'] = seg_gt[None, ...]
 
             # for convenience, make augmentation matrices 3x3
             post_tran = torch.zeros(3)

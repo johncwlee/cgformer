@@ -144,7 +144,7 @@ class CGFormerSegConsistency(BaseModule):
             target=target[:, 0:1, ...],
             depth=img_metas['gt_depths'][:, 0:1, ...]
         )
-        losses["loss_seg_ce"] = losses_seg['loss_voxel_ce']
+        losses.update(losses_seg)
 
         losses_occupancy = self.pts_bbox_head.loss(
             output_voxels=output['output_voxels'],
@@ -169,7 +169,7 @@ class CGFormerSegConsistency(BaseModule):
             'losses': losses,
             'pred': pred,
             'gt_occ': gt_occ,
-            'segmentation': segmentation,
+            'segmentation': segmentation
         }
 
         return train_output

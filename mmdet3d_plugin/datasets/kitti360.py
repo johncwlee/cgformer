@@ -101,7 +101,8 @@ class KITTI360Dataset(Dataset):
             "T_velo_2_cam": T_velo_2_cam,
             "proj_matrix_2": proj_matrix_2,
             "proj_matrix_3": proj_matrix_3,
-            "seg_gt_path": seg_gt_path,
+            "seg_gt_2_path": seg_gt_2_path,
+            "seg_gt_3_path": seg_gt_3_path,
             "stereo_depth_path": stereo_depth_path
         '''
         input_dict = dict(

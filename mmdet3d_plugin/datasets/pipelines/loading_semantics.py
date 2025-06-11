@@ -15,8 +15,10 @@ class MapDenseAnnotations:
     """
     def __init__(self, dataset):
         self.dataset = dataset
-        assert self.dataset in ['kitti360', 'ssckitti360'], \
-            f"dataset must be one of ['kitti360', 'ssckitti360'], but got {self.dataset}"
+        if not self.dataset == 'kitti360':
+            raise NotImplementedError(
+                f"dataset must be kitti360, but got {self.dataset}"
+            )
         self.learning_map = learning_map[self.dataset]
     
     def __call__(self, results):

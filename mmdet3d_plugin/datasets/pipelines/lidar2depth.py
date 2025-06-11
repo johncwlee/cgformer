@@ -13,7 +13,7 @@ class CreateDepthFromLiDAR(object):
     ):
         self.data_root = data_root
         self.dataset = dataset
-        assert self.dataset in ['kitti', 'kitti360', 'ssckitti360']
+        assert self.dataset in ['kitti', 'kitti360']
         if load_seg:
             self.learning_map = learning_map[dataset]
         self.seg_label_root = os.path.join(data_root, 'lidarseg')
@@ -38,7 +38,7 @@ class CreateDepthFromLiDAR(object):
             else:
                 label_points = None
             
-        elif self.dataset in ['ssckitti360', 'kitti360']:
+        elif self.dataset == 'kitti360':
             img_filename = results['img_filename'][0]
             seq_id, _, _, filename = img_filename.split("/")[-4:]
             lidar_filename = os.path.join(self.data_root, 'data_3d_raw', seq_id, 'velodyne_points', 'data', filename.replace(".png", ".bin"))
