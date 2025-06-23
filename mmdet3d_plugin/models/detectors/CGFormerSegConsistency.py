@@ -23,6 +23,7 @@ class CGFormerSegConsistency(BaseModule):
         train_cfg=None,
         test_cfg=None,
         depth_anything=None,
+        finetune_seg=False,
     ):
         super().__init__()
 
@@ -45,7 +46,7 @@ class CGFormerSegConsistency(BaseModule):
         self.pts_bbox_head = builder.build_head(pts_bbox_head)
 
         self.depth_loss = depth_loss
-
+        self.finetune_seg = finetune_seg
         if depth_anything is not None:
             self.depth_anything = builder.build_neck(depth_anything)
             self.depth_anything.eval()
@@ -53,6 +54,9 @@ class CGFormerSegConsistency(BaseModule):
                 param.requires_grad = False
         else:
             self.depth_anything = None
+        
+        for param in self.plugin_head.parameters():
+            param.requires_grad = self.finetune_seg
 
     def image_encoder(self, img):
         imgs = img
@@ -139,12 +143,13 @@ class CGFormerSegConsistency(BaseModule):
         if self.depth_loss and depth is not None:
             losses['loss_depth'] = self.depth_net.get_depth_loss(img_inputs['gt_depths'], depth)
 
-        losses_seg = self.plugin_head.loss(
-            pred=segmentation,
-            target=target[:, 0:1, ...],
-            depth=img_metas['gt_depths'][:, 0:1, ...]
-        )
-        losses.update(losses_seg)
+        if self.finetune_seg:
+            losses_seg = self.plugin_head.loss(
+                pred=segmentation,
+                target=target[:, 0:1, ...],
+                depth=img_metas['gt_depths'][:, 0:1, ...]
+            )
+            losses.update(losses_seg)
 
         losses_occupancy = self.pts_bbox_head.loss(
             output_voxels=output['output_voxels'],
@@ -183,7 +188,6 @@ class CGFormerSegConsistency(BaseModule):
             img_metas['stereo_depth'] = self.depth_anything(img_inputs[0])
 
         img_voxel_feats, context, depth = self.extract_img_feat(img_inputs, img_metas)
-        #TODO: add 2d semantic head
         # segmentation = self.plugin_head(context)    #* (B, num_classes, H, W)
         voxel_feats_enc = self.occ_encoder(img_voxel_feats)
 
