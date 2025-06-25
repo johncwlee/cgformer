@@ -4,9 +4,12 @@ import numpy as np
 from PIL import Image
 import pytorch_lightning as pl
 from .basemodel import LightningBaseModel
-from .metric import SSCMetrics, SemanticSegmentationMetrics
+from .metric import SSCMetrics, SemanticSegmentationMetrics, FOVSSCMetrics
 from mmdet3d.models import build_model
-from .utils import get_inv_map, create_colored_segmentation_map, SEMANTIC_KITTI_COLORS
+from .utils import (
+    get_inv_map, create_colored_segmentation_map, get_fov_mask,
+    SEMANTIC_KITTI_COLORS
+)
 from mmcv.runner.checkpoint import load_checkpoint
 
 
@@ -34,6 +37,12 @@ class pl_model(LightningBaseModel):
                             else SemanticSegmentationMetrics(self.num_class)
         self.test_metrics = SSCMetrics(config['num_class']) if not self.pretrain \
                             else SemanticSegmentationMetrics(self.num_class)
+        
+        #* FOV SSC Metrics
+        if not self.pretrain:
+            self.train_metrics_fov = FOVSSCMetrics(config['num_class'])
+            self.val_metrics_fov = FOVSSCMetrics(config['num_class'])
+            self.test_metrics_fov = FOVSSCMetrics(config['num_class'])
     
     def forward(self, data_dict):
         return self.model(data_dict)
@@ -63,7 +72,10 @@ class pl_model(LightningBaseModel):
             gt = output_dict['gt_semantics'].detach().cpu().numpy()
         
         self.train_metrics.add_batch(pred, gt)
-
+        if not self.pretrain:
+            #? Compute FOV masks
+            fov_masks = self.get_fov_masks(batch)
+            self.test_metrics_fov.add_batch(pred, gt, fov_masks)
         return loss
     
     def validation_step(self, batch, batch_idx):
@@ -78,12 +90,14 @@ class pl_model(LightningBaseModel):
             gt = output_dict['gt_semantics'].detach().cpu().numpy()
         
         self.val_metrics.add_batch(pred, gt)
+        if not self.pretrain:
+            #? Compute FOV masks
+            fov_masks = self.get_fov_masks(batch)
+            self.test_metrics_fov.add_batch(pred, gt, fov_masks)
     
     def validation_epoch_end(self, outputs):
-        metric_list = [("train", self.train_metrics), ("val", self.val_metrics)]
-        # metric_list = [("val", self.val_metrics)]
+        metrics_list = [("train", self.train_metrics), ("val", self.val_metrics)]
         
-        metrics_list = metric_list
         for prefix, metric in metrics_list:
             stats = metric.get_stats()
 
@@ -170,6 +184,10 @@ class pl_model(LightningBaseModel):
             
         if gt_occ is not None:
             self.test_metrics.add_batch(pred, gt_occ)
+            if not self.pretrain:
+                #? Compute FOV masks
+                fov_masks = self.get_fov_masks(batch)
+                self.test_metrics_fov.add_batch(pred, gt_occ, fov_masks)
     
     def test_epoch_end(self, outputs):
         metric_list = [("test", self.test_metrics)]
@@ -193,3 +211,33 @@ class pl_model(LightningBaseModel):
 
                 self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_mean"], dtype=torch.float32), sync_dist=True)
             metric.reset()
+
+    def get_fov_masks(self, batch):
+        cam_params = batch['img_inputs'][1:7]
+        rots, trans, intrins, post_rots, post_trans, bda = cam_params
+        transform = torch.cat([rots, trans[..., None]], dim=-1)
+        B, N, _, _ = transform.shape
+        bottom_row = torch.tensor([0.0, 0.0, 0.0, 1.0], device=transform.device).view(1, 1, 1, 4).expand(B, N, -1, -1)
+        transform = torch.cat([transform, bottom_row], dim=-2)
+        transform = transform.cpu().numpy()
+        intrins = intrins.cpu().numpy()
+        transform = np.linalg.inv(transform)
+
+        grid_size = batch['img_metas']['occ_size'].tolist()[0]
+        origin = batch['img_metas']['pc_range'].tolist()[0][:3]
+        img_H, img_W = batch['img_metas']['img_shape']
+        img_H, img_W = img_H.item(), img_W.item()
+        img_size = [img_W, img_H]
+        fov_masks_batch = []
+        for b in range(B):
+            #TODO: check for num_cam > 1
+            fov_mask = get_fov_mask(transform[b, 0], 
+                                    intrins[b, 0],
+                                    grid_size=grid_size,
+                                    origin=origin,
+                                    img_size=img_size)
+            fov_mask = fov_mask.reshape(*grid_size)
+            fov_masks_batch.append(fov_mask)
+        fov_masks_batch = np.stack(fov_masks_batch, axis=0)
+        
+        return fov_masks_batch
