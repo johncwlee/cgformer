@@ -24,6 +24,7 @@ class CGFormerSegConsistency(BaseModule):
         test_cfg=None,
         depth_anything=None,
         finetune_seg=False,
+        dual_occ_head=False
     ):
         super().__init__()
 
@@ -44,6 +45,10 @@ class CGFormerSegConsistency(BaseModule):
             self.occ_encoder_neck = builder.build_neck(occ_encoder_neck)
         
         self.pts_bbox_head = builder.build_head(pts_bbox_head)
+        self.dual_occ_head = dual_occ_head
+        if dual_occ_head:
+            self.pts_bbox_head2 = builder.build_head(pts_bbox_head)
+        #TODO: add layer to fuse two occ logits instead of taking average
 
         self.depth_loss = depth_loss
         self.finetune_seg = finetune_seg
@@ -137,6 +142,13 @@ class CGFormerSegConsistency(BaseModule):
             img_feats=None,
             gt_occ=gt_occ
         )
+        if self.dual_occ_head:
+            output2 = self.pts_bbox_head2(
+                voxel_feats=voxel_feats_enc,
+                img_metas=img_metas,
+                img_feats=None,
+                gt_occ=gt_occ
+            )
 
         losses = dict()
 
@@ -157,13 +169,27 @@ class CGFormerSegConsistency(BaseModule):
         )
         losses.update(losses_occupancy)
 
+        if self.dual_occ_head:
+            losses_occupancy2 = dict()
+            losses_occupancy = self.pts_bbox_head2.loss(
+                output_voxels=output2['output_voxels'],
+                target_voxels=gt_occ
+            )
+            for key in losses_occupancy:
+                losses_occupancy2[f"{key}_2"] = losses_occupancy[key]
+            losses.update(losses_occupancy2)
+
         pred = output['output_voxels']
+        if self.dual_occ_head:
+            #? Take average of two occ heads
+            pred = (pred + output2['output_voxels']) / 2
         pred = torch.argmax(pred, dim=1)
 
         #* --- 2D-3D Consistency Loss ---
         losses_consistency = self.consistency_head.loss(
             seg_logits=segmentation,
-            voxel_logits=output['output_voxels'],
+            voxel_logits=(output2['output_voxels'] if self.dual_occ_head 
+                          else output['output_voxels']),
             cam_params=img_inputs[1:7],
             img_metas=img_metas
         )
@@ -203,8 +229,18 @@ class CGFormerSegConsistency(BaseModule):
             img_feats=None,
             gt_occ=gt_occ
         )
+        if self.dual_occ_head:
+            output2 = self.pts_bbox_head2(
+                voxel_feats=voxel_feats_enc,
+                img_metas=img_metas,
+                img_feats=None,
+                gt_occ=gt_occ
+            )
 
         pred = output['output_voxels']
+        if self.dual_occ_head:
+            #? Take average of two occ heads
+            pred = (pred + output2['output_voxels']) / 2
         pred = torch.argmax(pred, dim=1)    #* (B, occ_X, occ_Y, occ_Z)
         
         projected_gt = self.consistency_head.visualize_occ_in_2d(

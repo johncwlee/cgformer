@@ -143,6 +143,7 @@ _num_points_self_ = 8
 model = dict(
     type='CGFormerSegConsistency',
     finetune_seg=False,
+    dual_occ_head=True,
     img_backbone=dict(
         type='CustomEfficientNet',
         arch='b7',
