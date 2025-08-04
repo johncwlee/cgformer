@@ -75,7 +75,7 @@ class pl_model(LightningBaseModel):
         if not self.pretrain:
             #? Compute FOV masks
             fov_masks = self.get_fov_masks(batch)
-            self.test_metrics_fov.add_batch(pred, gt, fov_masks)
+            self.train_metrics_fov.add_batch(pred, gt, fov_masks)
         return loss
     
     def validation_step(self, batch, batch_idx):
@@ -93,19 +93,25 @@ class pl_model(LightningBaseModel):
         if not self.pretrain:
             #? Compute FOV masks
             fov_masks = self.get_fov_masks(batch)
-            self.test_metrics_fov.add_batch(pred, gt, fov_masks)
+            self.val_metrics_fov.add_batch(pred, gt, fov_masks)
     
     def validation_epoch_end(self, outputs):
-        metrics_list = [("train", self.train_metrics), ("val", self.val_metrics)]
+        metrics_list = [("train", self.train_metrics), ("val", self.val_metrics),
+                        ("train_fov", self.train_metrics_fov), ("val_fov", self.val_metrics_fov)]
         
         for prefix, metric in metrics_list:
             stats = metric.get_stats()
 
             if not self.pretrain:
                 self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_ssc_mean"], dtype=torch.float32), sync_dist=True)
+                #? Add IoU for each class
+                for name, iou in zip(self.class_names[1:], stats['iou_ssc'][1:]):
+                    self.log("{}/IoU_{}".format(prefix, name), torch.tensor(iou, dtype=torch.float32), sync_dist=True)
                 self.log("{}/IoU".format(prefix), torch.tensor(stats["iou"], dtype=torch.float32), sync_dist=True)
-                self.log("{}/Precision".format(prefix), torch.tensor(stats["precision"], dtype=torch.float32), sync_dist=True)
-                self.log("{}/Recall".format(prefix), torch.tensor(stats["recall"], dtype=torch.float32), sync_dist=True)
+                if "precision" in stats:
+                    self.log("{}/Precision".format(prefix), torch.tensor(stats["precision"], dtype=torch.float32), sync_dist=True)
+                if "recall" in stats:
+                    self.log("{}/Recall".format(prefix), torch.tensor(stats["recall"], dtype=torch.float32), sync_dist=True)
             else:
                 self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_mean"], dtype=torch.float32), sync_dist=True)
                 #? Add IoU for each class
@@ -190,7 +196,7 @@ class pl_model(LightningBaseModel):
                 self.test_metrics_fov.add_batch(pred, gt_occ, fov_masks)
     
     def test_epoch_end(self, outputs):
-        metric_list = [("test", self.test_metrics)]
+        metric_list = [("test", self.test_metrics), ("test_fov", self.test_metrics_fov)]
         
         metrics_list = metric_list
         for prefix, metric in metrics_list:
@@ -202,8 +208,10 @@ class pl_model(LightningBaseModel):
 
                 self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_ssc_mean"], dtype=torch.float32), sync_dist=True)
                 self.log("{}/IoU".format(prefix), torch.tensor(stats["iou"], dtype=torch.float32), sync_dist=True)
-                self.log("{}/Precision".format(prefix), torch.tensor(stats["precision"], dtype=torch.float32), sync_dist=True)
-                self.log("{}/Recall".format(prefix), torch.tensor(stats["recall"], dtype=torch.float32), sync_dist=True)
+                if "precision" in stats:
+                    self.log("{}/Precision".format(prefix), torch.tensor(stats["precision"], dtype=torch.float32), sync_dist=True)
+                if "recall" in stats:
+                    self.log("{}/Recall".format(prefix), torch.tensor(stats["recall"], dtype=torch.float32), sync_dist=True)
             else:
                 #? Add IoU for each class
                 for name, iou in zip(self.class_names[1:], stats['iou_class'][1:]):
