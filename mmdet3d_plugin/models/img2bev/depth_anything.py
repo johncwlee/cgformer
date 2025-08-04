@@ -442,7 +442,8 @@ class DepthAnything(BaseModule):
             f"Input image size ({x.shape[-2]}, {x.shape[-1]}) must be divisible by 14."
         patch_h, patch_w = x.shape[-2] // 14, x.shape[-1] // 14
 
-        dino_features = self.pretrained.get_intermediate_layers(x, self.layer_idx, return_class_token=True)
+        #* DINOv1 uses last 4 layers, DINOv2 uses self.layer_idx
+        dino_features = self.pretrained.get_intermediate_layers(x, 4, return_class_token=True)
         out = self.depth_head(dino_features, patch_h, patch_w)
         rel_depth = F.relu(out).squeeze(1)
 
