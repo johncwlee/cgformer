@@ -106,6 +106,8 @@ class VoxFormerHead(nn.Module):
         dtype, device = mlvl_feats[0].dtype, mlvl_feats[0].device        
 
         volume_queries = self.volume_embed.weight.to(dtype)
+        #? Add LSS volume to initial voxel volume queries
+        #* lss volume is derived from context features * depth distribution (LSS)
         if lss_volume is not None:
             # Todo: support batch size > 1
             assert lss_volume.shape[0] == 1
@@ -117,7 +119,9 @@ class VoxFormerHead(nn.Module):
             proposal = torch.ones_like(proposal)
         # Generate bev postional embeddings for cross and self attention
         bev_pos_cross_attn = self.positional_encoding(torch.zeros((bs, 512, 512), device=volume_queries.device).to(dtype)).to(dtype) # [1, dim, 128*4, 128*4]
+        # bev_pos_cross_attn = self.positional_encoding(torch.zeros((bs, 1024, 1024), device=volume_queries.device).to(dtype)).to(dtype) # [1, dim, 128*4, 128*4]
         bev_pos_self_attn = self.positional_encoding(torch.zeros((bs, 512, 512), device=volume_queries.device).to(dtype)).to(dtype) # [1, dim, 128*4, 128*4]
+        # bev_pos_self_attn = self.positional_encoding(torch.zeros((bs, 1024, 1024), device=volume_queries.device).to(dtype)).to(dtype) # [1, dim, 128*4, 128*4]
 
         vox_coords, ref_3d = self.vox_coords.clone(), self.ref_3d.clone()
         # proposal = torch.zeros([bs, self.volume_h, self.volume_w, self.volume_z])
@@ -125,16 +129,17 @@ class VoxFormerHead(nn.Module):
         unmasked_idx = torch.nonzero(proposal.reshape(-1) > 0).view(-1)
         masked_idx = torch.nonzero(proposal.reshape(-1) == 0).view(-1)
         # Compute seed features of query proposals by deformable cross attention
+        
         seed_feats = self.cross_transformer.get_vox_features(
-            mlvl_feats,
-            volume_queries,
+            mlvl_feats, #* context features: list[tensor]; each tensor is (B, N, C, H, W)
+            volume_queries, #* initial voxel volume queries: (h*w*z, dim)
             self.volume_h,
             self.volume_w,
-            ref_3d=ref_3d,
-            vox_coords=vox_coords,
-            unmasked_idx=unmasked_idx,
+            ref_3d=ref_3d,  #* normalized 3D coordinates of voxel centers: (h*w*z, 3)
+            vox_coords=vox_coords,  #* voxel indices: (h*w*z, 4); [x, y, z, idx]
+            unmasked_idx=unmasked_idx, #* indices of unmasked voxels: (n,); n is the number of unmasked voxels
             grid_length=None,
-            bev_pos=bev_pos_cross_attn,
+            bev_pos=bev_pos_cross_attn, #* bev positional embeddings for cross attention: (1, dim 512, 512)
             img_metas=img_metas,
             prev_bev=None,
             cam_params=cam_params,
@@ -152,8 +157,8 @@ class VoxFormerHead(nn.Module):
         vox_feats_diff = self.self_transformer.diffuse_vox_features(
             mlvl_feats,
             vox_feats_flatten,
-            512,
-            512,
+            512,    #* 1024
+            512,    #* 1024
             ref_3d=ref_3d,
             vox_coords=vox_coords,
             unmasked_idx=unmasked_idx,

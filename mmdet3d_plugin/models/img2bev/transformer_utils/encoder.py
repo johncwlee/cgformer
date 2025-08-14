@@ -10,8 +10,11 @@
 #  Modified by Zhiqi Li
 # ---------------------------------------------
 
+import math
 import numpy as np
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import cv2 as cv
 import mmcv
 import copy
@@ -19,13 +22,42 @@ import warnings
 from mmcv.cnn.bricks.registry import (ATTENTION, TRANSFORMER_LAYER, TRANSFORMER_LAYER_SEQUENCE)
 from mmcv.cnn.bricks.transformer import TransformerLayerSequence
 from mmcv.runner import force_fp32, auto_fp16
-from mmcv.utils import TORCH_VERSION, digit_version
 from mmcv.utils import ext_loader
+from mmdet.models.utils.transformer import inverse_sigmoid
 # from projects.mmdet3d_plugin.models.utils.visual import save_tensor
 from .custom_base_transformer_layer import MyCustomBaseTransformerLayer
 
 ext_module = ext_loader.load_ext(
     '_ext', ['ms_deform_attn_backward', 'ms_deform_attn_forward'])
+
+
+def pos2posemb3d(pos, num_pos_feats=128, temperature=10000):
+    """
+    Convert 3D coordinates to positional embeddings. 
+    Follow PETR-style positional encoding.
+    Args:
+        pos: (N_query, 3)
+        num_pos_feats:
+        temperature:
+    Returns:
+        posemb: (N_query, num_feats * 3)
+    """
+    scale = 2 * math.pi
+    pos = pos * scale
+    dim_t = torch.arange(num_pos_feats, dtype=torch.float32, device=pos.device)     # (num_feats, )
+    # Use floor division with specified rounding mode to avoid deprecation warning
+    dim_t = torch.div(dim_t, 2, rounding_mode='floor')
+    dim_t = temperature ** (2 * dim_t / num_pos_feats)   # (num_feats, )   [10000^(0/128), 10000^(0/128), 10000^(2/128), 10000^(2/128), ...]
+    pos_x = pos[..., 0, None] / dim_t   # (N_query, num_feats)      num_feats:  [pos_x/10000^(0/128), pos_x/10000^(0/128), pos_x/10000^(2/128), pos_x/10000^(2/128), ...]
+    pos_y = pos[..., 1, None] / dim_t   # (N_query, num_feats)      num_feats:  [pos_y/10000^(0/128), pos_y/10000^(0/128), pos_y/10000^(2/128), pos_y/10000^(2/128), ...]
+    pos_z = pos[..., 2, None] / dim_t   # (N_query, num_feats)      num_feats:  [pos_z/10000^(0/128), pos_z/10000^(0/128), pos_z/10000^(2/128), pos_z/10000^(2/128), ...]
+
+    # (N_query, num_feats/2, 2) --> (N_query, num_feats)
+    pos_x = torch.stack((pos_x[..., 0::2].sin(), pos_x[..., 1::2].cos()), dim=-1).flatten(-2)       # num_feats:  [sin(pos_x/10000^(0/128)), cos(pos_x/10000^(0/128)), sin(pos_x/10000^(2/128)), cos(pos_x/10000^(2/128)), ...]
+    pos_y = torch.stack((pos_y[..., 0::2].sin(), pos_y[..., 1::2].cos()), dim=-1).flatten(-2)       # num_feats:  [sin(pos_y/10000^(0/128)), cos(pos_y/10000^(0/128)), sin(pos_y/10000^(2/128)), cos(pos_y/10000^(2/128)), ...]
+    pos_z = torch.stack((pos_z[..., 0::2].sin(), pos_z[..., 1::2].cos()), dim=-1).flatten(-2)       # num_feats:  [sin(pos_z/10000^(0/128)), cos(pos_z/10000^(0/128)), sin(pos_z/10000^(2/128)), cos(pos_z/10000^(2/128)), ...]
+    posemb = torch.cat((pos_y, pos_x, pos_z), dim=-1)   # (N_query, num_feats * 3)
+    return posemb
 
 
 @TRANSFORMER_LAYER_SEQUENCE.register_module()
@@ -206,6 +238,8 @@ class VoxFormerEncoder(TransformerLayerSequence):
 
         ref_2d = self.get_reference_points(
             512, 512, dim='2d', bs=bev_query.size(1), device=bev_query.device, dtype=bev_query.dtype)
+        # ref_2d = self.get_reference_points(
+        #     1024, 1024, dim='2d', bs=bev_query.size(1), device=bev_query.device, dtype=bev_query.dtype)
 
         bs, len_bev, num_bev_level, _ = ref_2d.shape
 
@@ -331,6 +365,237 @@ class VoxFormerEncoder_DFA3D(VoxFormerEncoder):
         volume_mask = volume_mask.permute(2, 1, 3, 0, 4).squeeze(-1) # [D, B, num_cam, num_query, 1] -> [num_cam, B, num_query, D]
         return reference_points_cam, volume_mask
 
+
+@TRANSFORMER_LAYER_SEQUENCE.register_module()
+class VoxFormerEncoder_DFA3D_PE(VoxFormerEncoder_DFA3D):
+    def __init__(
+        self,
+        *args, 
+        pc_range=None,
+        data_config=None,
+        num_points_in_pillar=4, 
+        return_intermediate=False, 
+        dataset_type='nuscenes',
+        d_bound=[2.0, 58.0, 0.5],
+        embed_dims=128,
+        **kwargs):
+        super(VoxFormerEncoder_DFA3D_PE, self).__init__(*args, pc_range=pc_range, data_config=data_config,
+                         return_intermediate=return_intermediate, dataset_type=dataset_type, **kwargs)
+        
+        #? 3D positional encoder
+        self.position_encoder = nn.Sequential(
+            nn.Linear(128*3, embed_dims),
+            nn.ReLU(),
+            nn.Linear(embed_dims, embed_dims),
+        )
+
+    @auto_fp16()
+    def forward(self,
+                bev_query,
+                key,
+                value,
+                *args,
+                ref_3d=None,
+                bev_h=None,
+                bev_w=None,
+                bev_pos=None,
+                spatial_shapes=None,
+                level_start_index=None,
+                cam_params=None,
+                valid_ratios=None,
+                prev_bev=None,
+                shift=0.,
+                **kwargs):
+        """Forward function for `TransformerEncoder`.
+        Args:
+            bev_query (Tensor): Input BEV query with shape
+                `(num_query, bs, embed_dims)`.
+            key & value (Tensor): Input multi-cameta features with shape
+                (num_cam, num_value, bs, embed_dims)
+            reference_points (Tensor): The reference
+                points of offset. has shape
+                (bs, num_query, 4) when as_two_stage,
+                otherwise has shape ((bs, num_query, 2).
+            valid_ratios (Tensor): The radios of valid
+                points on the feature map, has shape
+                (bs, num_levels, 2)
+        Returns:
+            Tensor: Results with shape [1, num_query, bs, embed_dims] when
+                return_intermediate is `False`, otherwise it has shape
+                [num_layers, num_query, bs, embed_dims].
+        """
+
+        output = bev_query
+        intermediate = []
+
+        ref_2d = self.get_reference_points(
+            512, 512, dim='2d', bs=bev_query.size(1), device=bev_query.device, dtype=bev_query.dtype)
+
+        bs, len_bev, num_bev_level, _ = ref_2d.shape
+        N = cam_params[0].shape[1]
+
+        hybird_ref_2d = torch.stack([ref_2d, ref_2d], 1).reshape(
+                bs*2, len_bev, num_bev_level, 2)
+
+        #? Get normalized per-camera 2D coordinates + depth of voxel centers
+        reference_points_cam, bev_mask = self.point_sampling(
+            ref_3d, self.pc_range, cam_params=cam_params, img_metas=kwargs['img_metas'], )
+        #* reference_points_cam: (bs, num_cam, num_query, 1, 3)
+
+        if spatial_shapes is None:
+            raise ValueError('spatial_shapes is None')
+        elif spatial_shapes.shape[0] > 1:
+            raise NotImplementedError('spatial_shapes.shape[0] > 1; 3D PE not implemented for more than 1 level')
+        #? Get 3D positional embeddings for the 2D features
+        coords3d = self.get_coords3d(spatial_shapes[0], 
+                                     self.pc_range, 
+                                     cam_params=cam_params, 
+                                     img_metas=kwargs['img_metas'])
+        coords3d = inverse_sigmoid(coords3d)    #* (B*N_view, H, W, 3)
+        coords3d_pe = self.position_encoder(pos2posemb3d(coords3d))  # (B*N_view, H, W, embed_dims)
+        coords3d_pe = coords3d_pe.permute(0, 3, 1, 2).contiguous()    # (B*N_view, embed_dims, H, W)
+        coords3d_pe = coords3d_pe.view(N, bs, -1, coords3d_pe.shape[-2], coords3d_pe.shape[-1]) #* (B, N_view, embed_dims, H, W)
+        coords3d_pe = coords3d_pe.flatten(3).permute(1, 3, 0, 2)  #* (N_view, H*W, B, embed_dims)
+
+        # (num_query, bs, embed_dims) -> (bs, num_query, embed_dims)
+        bev_query = bev_query.permute(1, 0, 2)
+        if bev_pos is not None:
+            bev_pos = bev_pos.permute(1, 0, 2)
+
+        for lid, layer in enumerate(self.layers):
+            output = layer(
+                bev_query,
+                key,
+                value,
+                *args,
+                bev_pos=bev_pos,   #TODO: get 3D PE for voxel centers
+                query_pos=None, #TODO: get 3D PE for voxel centers
+                key_pos=coords3d_pe,
+                ref_2d=hybird_ref_2d,
+                ref_3d=ref_3d,
+                bev_h=bev_h,
+                bev_w=bev_w,
+                spatial_shapes=spatial_shapes,
+                level_start_index=level_start_index,
+                reference_points_cam=reference_points_cam,
+                bev_mask=bev_mask,
+                prev_bev=prev_bev,
+                **kwargs)
+
+            bev_query = output
+            if self.return_intermediate:
+                intermediate.append(output)
+
+        if self.return_intermediate:
+            return torch.stack(intermediate)
+
+        return output
+    
+    def get_coords3d(self, spatial_shape, pc_range, cam_params, img_metas):
+        """
+        Compute per-view 3D coordinates for each feature location using the predicted depth map.
+
+        Args:
+            spatial_shape (Tensor or tuple): (H_feat, W_feat) of the feature map level used as "key".
+            pc_range (list/tuple): [x_min, y_min, z_min, x_max, y_max, z_max].
+            cam_params (tuple): (rots, trans, intrins, post_rots, post_trans, bda) as produced by the pipeline.
+            img_metas (dict): Must contain 'stereo_depth' predicted depth maps aligned with post transforms.
+
+        Returns:
+            Tensor: Normalized 3D coordinates in shape (B, N_view, H_feat, W_feat, 3), each in [0, 1] per axis.
+        """
+
+        #? Unpack camera parameters
+        rots, trans, intrins, post_rots, post_trans, bda = cam_params
+        B, N = trans.shape[:2]
+
+        #? Resolve target feature spatial size
+        if isinstance(spatial_shape, torch.Tensor):
+            H_feat = int(spatial_shape[0].item())
+            W_feat = int(spatial_shape[1].item())
+        else:
+            H_feat, W_feat = int(spatial_shape[0]), int(spatial_shape[1])
+        
+        H_img, W_img = torch.cat(img_metas['img_shape'][:2]).tolist()
+
+        #? Fetch depth map from metas and reshape to (B, N, 1, H_img, W_img)
+        if not isinstance(img_metas, dict) or ('stereo_depth' not in img_metas):
+            raise ValueError('img_metas must be a dict and contain key "stereo_depth"')
+        depth = img_metas['stereo_depth']   #* (bs, N, H_img, W_img)
+
+        #? Downsize depth to feature resolution (H_feat, W_feat)
+        depth_ds = F.interpolate(
+            depth.view(B * N, 1, H_img, W_img),
+            size=(H_feat, W_feat),
+            mode='bilinear',
+            align_corners=True
+        ).view(B, N, 1, H_feat, W_feat)
+        
+        fH, fW = self.final_dim
+        #? Build pixel grid in image coordinates (aligned to resized feature grid)
+        #? Use image pixel units corresponding to the final post-aug image scale
+        #? Follow PETR-style integer grid on the feature map, scaled to image pixel units
+        xs = torch.arange(W_feat, device=depth_ds.device, dtype=depth_ds.dtype) * (fW / W_feat)
+        ys = torch.arange(H_feat, device=depth_ds.device, dtype=depth_ds.dtype) * (fH / H_feat)
+        xs = xs.view(1, 1, 1, 1, W_feat)
+        ys = ys.view(1, 1, 1, H_feat, 1)
+        grid_u = xs.expand(B, N, 1, H_feat, W_feat)
+        grid_v = ys.expand(B, N, 1, H_feat, W_feat)
+
+        #? Prepare points tensor: (B*N, 3, H_feat*W_feat)
+        points = torch.cat([grid_u, grid_v, depth_ds], dim=2)  # (B, N, 3, H_feat, W_feat)
+        points = points.view(B * N, 3, H_feat * W_feat)
+
+        #? Undo post transformations
+        post_trans_bn = post_trans.view(B * N, 3)
+        post_rots_bn = post_rots.view(B * N, 3, 3)
+        points = points - post_trans_bn[..., None]
+        inv_post_rots = torch.inverse(post_rots_bn)
+        points = inv_post_rots @ points  # (B*N, 3, H*W)
+        
+
+        #? Convert (u, v, d) -> (du, dv, d)
+        points = torch.cat([points[:, 0:2, :] * points[:, 2:3, :], points[:, 2:3, :]], dim=1)
+
+        #? Apply intrinsics: image pixel space (du,dv,d) -> camera space
+        intrins_bn = intrins.view(B * N, intrins.shape[-2], intrins.shape[-1])
+        if intrins_bn.shape[-1] == 4:
+            # Homogeneous intrinsics: use 4x4 inverse on (du,dv,d,1)
+            ones = torch.ones((B * N, 1, H_feat * W_feat), dtype=points.dtype, device=points.device)
+            homo_points = torch.cat([points, ones], dim=1)  # (B*N, 4, H*W)
+            inv_K = torch.inverse(intrins_bn)
+            points_cam_h = inv_K @ homo_points
+            points = points_cam_h[:, :3, :]  # drop homogeneous row
+        else:
+            inv_K = torch.inverse(intrins_bn)
+            points = inv_K @ points
+
+        #? cam-to-ego
+        rots_bn = rots.view(B * N, 3, 3)
+        trans_bn = trans.view(B * N, 3)
+        # camera -> ego with R, then translate by t
+        points = rots_bn @ points
+        points = points + trans_bn[..., None]
+
+        #? Apply bda augmentation if provided
+        bda_bn = bda.view(B * N, bda.shape[-2], bda.shape[-1])
+        if bda_bn.shape[-1] == 4:
+            ones = torch.ones((B * N, 1, H_feat * W_feat), dtype=points.dtype, device=points.device)
+            homo = torch.cat([points, ones], dim=1)  # (B*N, 4, H*W)
+            homo = (bda_bn @ homo).squeeze(-1)
+            points = homo[:, :3, :]
+        else:
+            points = bda_bn @ points
+
+        #? Normalize to [0, 1] based on pc_range
+        x_min, y_min, z_min, x_max, y_max, z_max = pc_range
+        points = points.transpose(1, 2).contiguous().view(B * N, H_feat, W_feat, 3)
+        points[..., 0] = (points[..., 0] - x_min) / (x_max - x_min)
+        points[..., 1] = (points[..., 1] - y_min) / (y_max - y_min)
+        points[..., 2] = (points[..., 2] - z_min) / (z_max - z_min)
+
+        return points
+
 @TRANSFORMER_LAYER.register_module()
 class VoxFormerLayer(MyCustomBaseTransformerLayer):
     """Implements encoder layer in DETR transformer.
@@ -448,7 +713,6 @@ class VoxFormerLayer(MyCustomBaseTransformerLayer):
         for layer in self.operation_order:
             # temporal self attention
             if layer == 'self_attn':
-
                 query = self.attentions[attn_index](
                     query,
                     prev_bev,

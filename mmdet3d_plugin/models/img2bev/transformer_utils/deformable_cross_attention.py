@@ -721,3 +721,170 @@ class DeformCrossAttention_DFA3D(DeformCrossAttention):
         slots = self.output_proj(slots)
 
         return self.dropout(slots) + inp_residual
+
+
+@ATTENTION.register_module()
+class DeformCrossAttention_DFA3D_PE(DeformCrossAttention):
+    """An attention module used in BEVFormer.
+    Args:
+        embed_dims (int): The embedding dimension of Attention.
+            Default: 256.
+        num_cams (int): The number of cameras
+        dropout (float): A Dropout layer on `inp_residual`.
+            Default: 0..
+        init_cfg (obj:`mmcv.ConfigDict`): The Config for initialization.
+            Default: None.
+        deformable_attention: (dict): The config for the deformable attention used in SCA.
+    """
+    def __init__(self, 
+                 embed_dims=256, 
+                 num_cams=6, 
+                 bev_h=200, 
+                 bev_w=200, 
+                 use_empty=False, 
+                 num_head=8, 
+                 pc_range=None, 
+                 dropout=0.1, init_cfg=None, batch_first=False, 
+                 deformable_attention=dict(type='MSDeformableAttention3D', embed_dims=256, num_levels=4), 
+                 use_key_pos_ln=True, 
+                 **kwargs):
+        super().__init__(embed_dims, 
+                         num_cams, 
+                         pc_range, 
+                         dropout, 
+                         init_cfg, 
+                         batch_first, 
+                         deformable_attention, 
+                         **kwargs)
+        self.bev_h = bev_h  # size of BEV. (height and width)
+        self.bev_w = bev_w
+        self.num_head = num_head  # num_head in deformable attention
+        self.use_empty = use_empty  # if use empty tensor to fill the anchors that can not obtain any valid features.
+        if use_empty:
+            self.empty_query = nn.Embedding(self.bev_h*self.bev_w*num_head, embed_dims)
+        # learnable scale for key_pos injection and optional LayerNorm
+        self.key_pos_scale = nn.Parameter(torch.tensor(1.0))
+        self.use_key_pos_ln = use_key_pos_ln
+        if self.use_key_pos_ln:
+            self.key_pos_ln = nn.LayerNorm(embed_dims)
+
+    @force_fp32(apply_to=('query', 'key', 'value', 'value_dpt_dist', 'query_pos', 'reference_points_cam'))
+    def forward(self,
+                query,
+                key,
+                value,
+                residual=None,
+                query_pos=None,
+                key_pos=None,
+                key_padding_mask=None,
+                reference_points=None,
+                spatial_shapes=None,
+                reference_points_cam=None,
+                bev_mask=None,
+                level_start_index=None,
+                value_dpt_dist=None,
+                flag='encoder',
+                **kwargs):
+        """Forward Function of Detr3DCrossAtten.
+        Args:
+            query (Tensor): Query of Transformer with shape
+                (num_query, bs, embed_dims).
+            key (Tensor): The key tensor with shape
+                `(num_key, bs, embed_dims)`.
+            value (Tensor): The value tensor with shape
+                `(num_key, bs, embed_dims)`. (B, N, C, H, W)
+            value_dpt_dist(Tensor): The depth distribution of each image feature (value), with shape
+                `(num_key, bs, embed_dims)`. (B, N, D, H, W)
+            residual (Tensor): The tensor used for addition, with the
+                same shape as `x`. Default None. If None, `x` will be used.
+            query_pos (Tensor): The positional encoding for `query`.
+                Default: None.
+            key_pos (Tensor): The positional encoding for  `key`. Default
+                None.
+            reference_points (Tensor):  The normalized reference
+                points with shape (bs, num_query, 4),
+                all elements is range in [0, 1], top-left (0,0),
+                bottom-right (1, 1), including padding area.
+                or (N, Length_{query}, num_levels, 4), add
+                additional two dimensions is (w, h) to
+                form reference boxes.
+            key_padding_mask (Tensor): ByteTensor for `query`, with
+                shape [bs, num_key].
+            spatial_shapes (Tensor): Spatial shape of features in
+                different level. With shape  (num_levels, 2),
+                last dimension represent (h, w).
+            level_start_index (Tensor): The start index of each level.
+                A tensor has shape (num_levels) and can be represented
+                as [0, h_0*w_0, h_0*w_0+h_1*w_1, ...].
+        Returns:
+             Tensor: forwarded results with shape [num_query, bs, embed_dims].
+        """
+
+        if key is None:
+            key = query
+        if value is None:
+            value = key
+
+        if residual is None:
+            inp_residual = query
+            slots = torch.zeros_like(query)
+        if query_pos is not None:
+            query = query + query_pos
+        if key_pos is not None:
+            key = key + self.key_pos_scale * key_pos
+            if self.use_key_pos_ln:
+                # key shape: (num_cam, HW, bs, C)
+                key = self.key_pos_ln(key)
+
+        bs, num_query, _ = query.size()
+
+        D = reference_points_cam.size(3)
+        indexes = []
+        for i, mask_per_img in enumerate(bev_mask):
+            index_query_per_img = mask_per_img[0].sum(-1).nonzero().squeeze(-1)
+            indexes.append(index_query_per_img)
+        max_len = max([len(each) for each in indexes])
+        # each camera only interacts with its corresponding BEV queries. This step can  greatly save GPU memory.
+        queries_rebatch = query.new_zeros(
+            [bs, self.num_cams, max_len, self.embed_dims])
+        reference_points_rebatch = reference_points_cam.new_zeros(
+            [bs, self.num_cams, max_len, D, 3])
+        empty_queries_rebatch = query.new_zeros(
+            [bs, self.num_cams, max_len, self.num_head, self.embed_dims])
+        
+        for j in range(bs):
+            for i, reference_points_per_img in enumerate(reference_points_cam):   
+                index_query_per_img = indexes[i]
+                queries_rebatch[j, i, :len(index_query_per_img)] = query[j, index_query_per_img]
+                reference_points_rebatch[j, i, :len(index_query_per_img)] = reference_points_per_img[j, index_query_per_img]
+                if self.use_empty:
+                    empty_queries_rebatch[j, i, :len(index_query_per_img)] = self.empty_query.weight.view(self.bev_h*self.bev_w, self.num_head, self.embed_dims)[index_query_per_img]
+
+        num_cams, l, bs, embed_dims = key.shape
+
+        key = key.permute(2, 0, 1, 3).reshape(
+            bs * self.num_cams, l, self.embed_dims)
+        value = value.permute(2, 0, 1, 3).reshape(
+            bs * self.num_cams, l, self.embed_dims)
+        value_dpt_dist = value_dpt_dist.permute(2, 0, 1, 3).reshape(
+            bs * self.num_cams, l, value_dpt_dist.shape[-1])
+
+        queries, update_weight = self.deformable_attention(query=queries_rebatch.view(bs*self.num_cams, max_len, self.embed_dims), key=key, value=value,
+                                            value_dpt_dist=value_dpt_dist,
+                                            reference_points=reference_points_rebatch.view(bs*self.num_cams, max_len, D, 3), spatial_shapes=spatial_shapes,
+                                            level_start_index=level_start_index, **kwargs)
+        queries = queries.view(bs, self.num_cams, max_len, self.embed_dims)
+        update_weight = update_weight.view(bs, self.num_cams, *update_weight.shape[1:])
+        if self.use_empty:
+            queries = queries + ((1-update_weight) * empty_queries_rebatch).mean(dim=-2)
+        for j in range(bs):
+            for i, index_query_per_img in enumerate(indexes):
+                slots[j, index_query_per_img] += queries[j, i, :len(index_query_per_img)]
+
+        count = bev_mask.sum(-1) > 0
+        count = count.permute(1, 2, 0).sum(-1)
+        count = torch.clamp(count, min=1.0)
+        slots = slots / count[..., None]
+        slots = self.output_proj(slots)
+
+        return self.dropout(slots) + inp_residual
