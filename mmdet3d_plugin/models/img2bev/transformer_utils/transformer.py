@@ -278,3 +278,124 @@ class PerceptionTransformer_DFA3D(PerceptionTransformer):
         )
 
         return bev_embed
+
+
+@TRANSFORMER.register_module()
+class PerceptionTransformer_DFA3D_PE(PerceptionTransformer_DFA3D):
+    @auto_fp16(apply_to=('mlvl_feats', 'bev_queries', 'prev_bev', 'bev_pos'))
+    def get_vox_features(
+            self,
+            mlvl_feats,
+            bev_queries,
+            bev_h,
+            bev_w,
+            ref_3d,
+            vox_coords,
+            unmasked_idx,
+            cam_params=None,
+            grid_length=[0.512, 0.512],
+            bev_pos=None,
+            prev_bev=None,
+            mlvl_dpt_dists=None,
+            **kwargs):
+        """
+        obtain voxel features.
+        """
+
+        bs = mlvl_feats[0].size(0)
+        # To do, implement a function which supports bs > 1
+        assert bs == 1
+        bev_queries = bev_queries.unsqueeze(1).repeat(1, bs, 1) #  #[N, bs, 64]
+
+        unmasked_bev_queries = bev_queries[vox_coords[unmasked_idx, 3], :, :]
+
+        unmasked_ref_3d = ref_3d[vox_coords[unmasked_idx, 3], :]
+        unmasked_ref_3d = unmasked_ref_3d.unsqueeze(0).unsqueeze(0).to(unmasked_bev_queries.device)
+        
+        feat_flatten = []
+        spatial_shapes = []
+        dpt_dist_flatten = []
+        for lvl, (feat, dpt_dist) in enumerate(zip(mlvl_feats, mlvl_dpt_dists)):
+            bs, num_cam, c, h, w = feat.shape
+            spatial_shape = (h, w)
+            feat = feat.flatten(3).permute(1, 0, 3, 2)
+            dpt_dist = dpt_dist.flatten(3).permute(1, 0, 3, 2)
+            if self.use_cams_embeds:
+                feat = feat + self.cams_embeds[:, None, None, :].to(feat.dtype)
+            feat = feat + self.level_embeds[None,
+                                            None, lvl:lvl + 1, :].to(feat.dtype)
+            spatial_shapes.append(spatial_shape)
+            feat_flatten.append(feat)
+            dpt_dist_flatten.append(dpt_dist)
+
+        feat_flatten = torch.cat(feat_flatten, 2)
+        dpt_dist_flatten = torch.cat(dpt_dist_flatten, 2)
+        spatial_shapes = torch.as_tensor(
+            spatial_shapes, dtype=torch.long, device=bev_queries.device)
+        level_start_index = torch.cat((spatial_shapes.new_zeros(
+            (1,)), spatial_shapes.prod(1).cumsum(0)[:-1]))
+
+        feat_flatten = feat_flatten.permute(0, 2, 1, 3)  # (num_cam, H*W, bs, embed_dims)
+
+        bev_embed = self.encoder(
+            unmasked_bev_queries,
+            feat_flatten,
+            feat_flatten,
+            value_dpt_dist=dpt_dist_flatten,
+            ref_3d=unmasked_ref_3d,
+            bev_h=bev_h,
+            bev_w=bev_w,
+            bev_pos=None,
+            spatial_shapes=spatial_shapes,
+            level_start_index=level_start_index,
+            cam_params=cam_params,
+            prev_bev=None,
+            shift=None,
+            **kwargs
+        )
+
+        return bev_embed
+
+    @auto_fp16(apply_to=('mlvl_feats', 'bev_queries', 'prev_bev', 'bev_pos'))
+    def diffuse_vox_features(
+            self,
+            mlvl_feats,
+            bev_queries,
+            bev_h,
+            bev_w,
+            ref_3d,
+            vox_coords,
+            unmasked_idx,
+            grid_length=[0.512, 0.512],
+            bev_pos=None,
+            prev_bev=None,
+            **kwargs):
+        """
+        diffuse voxel features.
+        """
+
+        bs = mlvl_feats[0].size(0)
+        
+        bev_queries = bev_queries.unsqueeze(1).repeat(1, bs, 1) 
+        if bev_pos is not None:
+            bev_pos = bev_pos.unsqueeze(1).repeat(1, bs, 1)
+
+        unmasked_ref_3d = ref_3d[vox_coords[unmasked_idx, 3], :]
+        unmasked_ref_3d = unmasked_ref_3d.unsqueeze(0).unsqueeze(0).to(bev_queries.device)
+        
+        bev_embed = self.encoder(
+            bev_queries,
+            None,
+            None,
+            ref_3d=unmasked_ref_3d,
+            bev_h=bev_h,
+            bev_w=bev_w,
+            bev_pos=bev_pos,
+            spatial_shapes=None,
+            level_start_index=None,
+            prev_bev=None,
+            shift=None,
+            **kwargs
+        ) 
+        
+        return bev_embed

@@ -468,8 +468,8 @@ class VoxFormerEncoder_DFA3D_PE(VoxFormerEncoder_DFA3D):
                 key,
                 value,
                 *args,
-                bev_pos=bev_pos,   #TODO: get 3D PE for voxel centers
-                query_pos=None, #TODO: get 3D PE for voxel centers
+                bev_pos=bev_pos,
+                query_pos=None,
                 key_pos=coords3d_pe,
                 ref_2d=hybird_ref_2d,
                 ref_3d=ref_3d,
@@ -719,7 +719,6 @@ class VoxFormerLayer(MyCustomBaseTransformerLayer):
                     prev_bev,
                     identity if self.pre_norm else None,
                     query_pos=bev_pos,
-                    key_pos=bev_pos,
                     attn_mask=attn_masks[attn_index],
                     key_padding_mask=query_key_padding_mask,
                     reference_points=ref_2d,
