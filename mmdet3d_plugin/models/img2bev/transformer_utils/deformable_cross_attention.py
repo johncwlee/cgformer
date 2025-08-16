@@ -746,7 +746,7 @@ class DeformCrossAttention_DFA3D_PE(DeformCrossAttention):
                  pc_range=None, 
                  dropout=0.1, init_cfg=None, batch_first=False, 
                  deformable_attention=dict(type='MSDeformableAttention3D', embed_dims=256, num_levels=4), 
-                 use_key_pos_ln=True, 
+                 use_pos_embed_ln=True, 
                  **kwargs):
         super().__init__(embed_dims, 
                          num_cams, 
@@ -762,11 +762,9 @@ class DeformCrossAttention_DFA3D_PE(DeformCrossAttention):
         self.use_empty = use_empty  # if use empty tensor to fill the anchors that can not obtain any valid features.
         if use_empty:
             self.empty_query = nn.Embedding(self.bev_h*self.bev_w*num_head, embed_dims)
-        # learnable scale for key_pos injection and optional LayerNorm
-        self.key_pos_scale = nn.Parameter(torch.tensor(1.0))
-        self.use_key_pos_ln = use_key_pos_ln
-        if self.use_key_pos_ln:
-            self.key_pos_ln = nn.LayerNorm(embed_dims)
+        self.use_pos_embed_ln = use_pos_embed_ln
+        if self.use_pos_embed_ln:
+            self.pos_embed_ln = nn.LayerNorm(embed_dims)
 
     @force_fp32(apply_to=('query', 'key', 'value', 'value_dpt_dist', 'query_pos', 'reference_points_cam'))
     def forward(self,
@@ -776,6 +774,7 @@ class DeformCrossAttention_DFA3D_PE(DeformCrossAttention):
                 residual=None,
                 query_pos=None,
                 key_pos=None,
+                value_pos=None,
                 key_padding_mask=None,
                 reference_points=None,
                 spatial_shapes=None,
@@ -830,11 +829,11 @@ class DeformCrossAttention_DFA3D_PE(DeformCrossAttention):
             slots = torch.zeros_like(query)
         if query_pos is not None:
             query = query + query_pos
-        if key_pos is not None:
-            key = key + self.key_pos_scale * key_pos
-            if self.use_key_pos_ln:
-                # key shape: (num_cam, HW, bs, C)
-                key = self.key_pos_ln(key)
+        if value_pos is not None:
+            value = value + value_pos
+            if self.use_pos_embed_ln:
+                # value shape: (num_cam, HW, bs, C)
+                value = self.pos_embed_ln(value)
 
         bs, num_query, _ = query.size()
 

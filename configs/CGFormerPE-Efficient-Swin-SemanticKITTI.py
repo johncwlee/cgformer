@@ -173,7 +173,7 @@ model = dict(
         init_cfg=None
     ),
     VoxFormer_head=dict(
-        type='VoxFormerHead_PE',
+        type='VoxFormerHead',
         volume_h=128,
         volume_w=128,
         volume_z=16,
@@ -181,7 +181,7 @@ model = dict(
         point_cloud_range=point_cloud_range,
         embed_dims=_dim_,
         cross_transformer=dict(
-           type='PerceptionTransformer_DFA3D',
+           type='PerceptionTransformer_DFA3D_PE',
            rotate_prev_bev=True,
            use_shift=True,
            embed_dims=_dim_,
@@ -207,7 +207,7 @@ model = dict(
                                num_points=_num_points_cross_,
                                num_levels=_num_levels_),
                            embed_dims=_dim_,
-                           use_key_pos_ln=False, #* use layer norm for 3D PE injection
+                           use_pos_embed_ln=False, #* use layer norm for 3D PE injection
                        )
                    ],
                    ffn_cfgs=dict(
