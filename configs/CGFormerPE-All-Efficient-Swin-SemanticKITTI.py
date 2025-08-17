@@ -207,7 +207,7 @@ model = dict(
                                num_points=_num_points_cross_,
                                num_levels=_num_levels_),
                            embed_dims=_dim_,
-                           use_key_pos_ln=False, #* use layer norm for 3D PE injection
+                           use_pos_embed_ln=False, #* use layer norm for 3D PE injection
                        )
                    ],
                    ffn_cfgs=dict(
