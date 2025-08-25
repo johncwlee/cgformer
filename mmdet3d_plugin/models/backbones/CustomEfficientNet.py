@@ -6,10 +6,11 @@ import torch.nn as nn
 import torch.utils.checkpoint as cp
 from timm.models import resnet
 from functools import partial
-from mmdet3d.models.builder import BACKBONES
-from mmcv.runner import BaseModule, Sequential
+from mmdet3d.registry import MODELS
+from mmengine.model import BaseModule, Sequential
 from mmcv.cnn.bricks import ConvModule, DropPath
-from mmdet.models.utils import SELayer, make_divisible
+from mmdet.models.layers import SELayer
+from mmdet.models.utils import make_divisible
 
 class EdgeResidual(BaseModule):
     """Edge Residual Block.
@@ -270,7 +271,7 @@ def model_scaling(layer_setting, arch_setting):
     return merge_layer_setting
 
 
-@BACKBONES.register_module()
+@MODELS.register_module()
 class CustomEfficientNet(BaseModule):
     """EfficientNet backbone.
     Args:

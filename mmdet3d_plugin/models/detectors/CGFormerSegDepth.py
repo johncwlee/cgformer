@@ -1,10 +1,9 @@
 import torch
 from torch.nn import functional as F
-from mmcv.runner import BaseModule
-from mmdet.models import DETECTORS
-from mmdet3d.models import builder
+from mmengine.model import BaseModule
+from mmdet3d.registry import MODELS
 
-@DETECTORS.register_module()
+@MODELS.register_module()
 class CGFormerSegDepth(BaseModule):
     def __init__(
         self,
@@ -18,14 +17,14 @@ class CGFormerSegDepth(BaseModule):
         depth_anything=None,
         ):
         super().__init__()
-        self.img_backbone = builder.build_backbone(img_backbone)
-        self.img_neck = builder.build_neck(img_neck)
-        self.depth_net = builder.build_neck(depth_net)
-        self.plugin_head = builder.build_head(plugin_head)
+        self.img_backbone = MODELS.build(img_backbone)
+        self.img_neck = MODELS.build(img_neck)
+        self.depth_net = MODELS.build(depth_net)
+        self.plugin_head = MODELS.build(plugin_head)
         # self.img_view_transformer = builder.build_neck(img_view_transformer)
         
         if depth_anything is not None:
-            self.depth_anything = builder.build_neck(depth_anything)
+            self.depth_anything = MODELS.build(depth_anything)
             self.depth_anything.eval()
             for param in self.depth_anything.parameters():
                 param.requires_grad = False

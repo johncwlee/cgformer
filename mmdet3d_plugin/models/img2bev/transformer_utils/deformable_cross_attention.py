@@ -15,15 +15,13 @@ import warnings
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mmcv.cnn import xavier_init, constant_init
-from mmcv.cnn.bricks.registry import (ATTENTION,
-                                      TRANSFORMER_LAYER,
-                                      TRANSFORMER_LAYER_SEQUENCE)
-from mmcv.cnn.bricks.transformer import build_attention
+from mmengine.model import xavier_init, constant_init
+from mmdet3d.registry import MODELS
+from mmcv.cnn.bricks.transformer import BaseTransformerLayer, TransformerLayerSequence
 import math
-from mmcv.runner import force_fp32, auto_fp16
+from mmdet3d_plugin.utils.decorators import force_fp32
 
-from mmcv.runner.base_module import BaseModule, ModuleList, Sequential
+from mmengine.model import BaseModule, ModuleList, Sequential
 from mmcv.utils import ext_loader
 from .multi_scale_deformable_attn_function import MultiScaleDeformableAttnFunction_fp32, \
     MultiScaleDeformableAttnFunction_fp16
@@ -35,7 +33,7 @@ ext_module = ext_loader.load_ext(
     '_ext', ['ms_deform_attn_backward', 'ms_deform_attn_forward'])
 
 
-@ATTENTION.register_module()
+@MODELS.register_module()
 class DeformCrossAttention(BaseModule):
     """An attention module used in VoxFormer.
     Args:
@@ -68,7 +66,7 @@ class DeformCrossAttention(BaseModule):
         self.dropout = nn.Dropout(dropout)
         self.pc_range = pc_range
         self.fp16_enabled = False
-        self.deformable_attention = build_attention(deformable_attention)
+        self.deformable_attention = MODELS.build(deformable_attention)
         self.embed_dims = embed_dims
         self.num_cams = num_cams
         self.output_proj = nn.Linear(embed_dims, embed_dims)
@@ -182,7 +180,7 @@ class DeformCrossAttention(BaseModule):
         return self.dropout(slots) + inp_residual
 
 
-@ATTENTION.register_module()
+@MODELS.register_module()
 class MSDeformableAttention3D(BaseModule):
     """An attention module used in BEVFormer based on Deformable-Detr.
     `Deformable DETR: Deformable Transformers for End-to-End Object Detection.
@@ -405,7 +403,7 @@ class MSDeformableAttention3D(BaseModule):
 
         return output
 
-@ATTENTION.register_module()
+@MODELS.register_module()
 class MSDeformableAttention3D_DFA3D(MSDeformableAttention3D):
     def __init__(self, embed_dims=256, num_heads=8, num_levels=4, num_points=8, im2col_step=64, dropout=0.1, batch_first=True, norm_cfg=None, init_cfg=None):
         super().__init__(embed_dims, num_heads, num_levels, num_points, im2col_step, dropout, batch_first, norm_cfg, init_cfg)
@@ -585,7 +583,7 @@ class MSDeformableAttention3D_DFA3D(MSDeformableAttention3D):
         spatial_shape_3D = torch.cat([spatial_shape, spatial_shape_depth], dim=-1)
         return spatial_shape_3D.contiguous()
 
-@ATTENTION.register_module()
+@MODELS.register_module()
 class DeformCrossAttention_DFA3D(DeformCrossAttention):
     """An attention module used in BEVFormer.
     Args:
@@ -723,7 +721,7 @@ class DeformCrossAttention_DFA3D(DeformCrossAttention):
         return self.dropout(slots) + inp_residual
 
 
-@ATTENTION.register_module()
+@MODELS.register_module()
 class DeformCrossAttention_DFA3D_PE(DeformCrossAttention):
     """An attention module used in BEVFormer.
     Args:

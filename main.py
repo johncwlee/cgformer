@@ -1,16 +1,17 @@
 import os
 import misc
 import torch
-from mmcv import Config
+from mmengine.config import Config
 from mmdet3d_plugin import *
-import pytorch_lightning as pl
+from lightning.pytorch import Trainer, seed_everything
 from argparse import ArgumentParser
 from LightningTools.pl_model import pl_model
 from LightningTools.dataset_dm import DataModule
-from pytorch_lightning import loggers as pl_loggers
-from pytorch_lightning.profiler import SimpleProfiler
-from pytorch_lightning.strategies.ddp import DDPStrategy
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from lightning.pytorch import loggers as pl_loggers                  # loggers (TensorBoard, WandB, MLflow, etc.)
+from lightning.pytorch.profilers import SimpleProfiler               # profiler API
+from lightning.pytorch.strategies import DDPStrategy                 # distributed strategies
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor  # callbacks
+
 
 def parse_config():
     parser = ArgumentParser()
@@ -48,7 +49,7 @@ if __name__ == '__main__':
     profiler = SimpleProfiler(dirpath=log_folder, filename="profiler.txt")
 
     seed = config.seed
-    pl.seed_everything(seed)
+    seed_everything(seed)
     num_gpu = torch.cuda.device_count()
     print(f"Number of GPUs: {num_gpu}")
     model = pl_model(config)
@@ -62,14 +63,13 @@ if __name__ == '__main__':
         filename='best')
     
     if not config.eval:
-        trainer = pl.Trainer(
+        trainer = Trainer(
             devices=[i for i in range(num_gpu)],
             strategy=DDPStrategy(
                 accelerator='gpu',
                 find_unused_parameters=False
             ),
             max_steps=config.training_steps,
-            resume_from_checkpoint=None,
             callbacks=[
                 checkpoint_callback,
                 LearningRateMonitor(logging_interval='step')
@@ -80,9 +80,9 @@ if __name__ == '__main__':
             log_every_n_steps=config['log_every_n_steps'],
             check_val_every_n_epoch=config['check_val_every_n_epoch']
         )
-        trainer.fit(model=model, datamodule=data_dm)
+        trainer.fit(model=model, datamodule=data_dm, ckpt_path=config.get('ckpt_path', 'last'))
     else:
-        trainer = pl.Trainer(
+        trainer = Trainer(
             devices=[i for i in range(num_gpu)],
             strategy=DDPStrategy(
                 accelerator='gpu',

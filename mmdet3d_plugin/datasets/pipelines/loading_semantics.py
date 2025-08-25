@@ -1,11 +1,11 @@
 import torch
 import numpy as np
 from PIL import Image
-from mmdet.datasets.builder import PIPELINES
+from mmdet3d.registry import TRANSFORMS
 
 from .learning_map import learning_map
 
-@PIPELINES.register_module()
+@TRANSFORMS.register_module()
 class MapDenseAnnotations:
     """
     Transform dense 2D semantic labels using a pre-defined mapping.

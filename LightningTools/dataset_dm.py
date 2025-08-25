@@ -1,8 +1,8 @@
-import pytorch_lightning as pl
-from mmdet.datasets import build_dataset
+from lightning.pytorch import LightningDataModule
 from torch.utils.data.dataloader import DataLoader
+from mmdet3d.registry import DATASETS
 
-class DataModule(pl.LightningDataModule):
+class DataModule(LightningDataModule):
     def __init__(
         self,
         config      
@@ -17,10 +17,15 @@ class DataModule(pl.LightningDataModule):
         self.val_dataloader_config = config.test_dataloader_config
         self.config = config
     
+    def prepare_data(self):
+        # Intentionally left blank; data is prepared in setup()
+        # This avoids Lightning's is_overridden parent resolution issue.
+        pass
+
     def setup(self, stage=None):
-        self.train_dataset = build_dataset(self.trainset_config)
-        self.test_dataset = build_dataset(self.testset_config)
-        self.val_dataset = build_dataset(self.valset_config)
+        self.train_dataset = DATASETS.build(self.trainset_config)
+        self.test_dataset = DATASETS.build(self.testset_config)
+        self.val_dataset = DATASETS.build(self.valset_config)
     
     def train_dataloader(self):
         return DataLoader(

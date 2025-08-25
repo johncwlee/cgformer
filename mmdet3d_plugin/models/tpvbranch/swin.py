@@ -8,7 +8,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as cp
 from mmcv.cnn import build_norm_layer
-from mmcv.cnn.bricks.transformer import FFN, build_dropout
+from mmcv.cnn.bricks.transformer import FFN
+from mmdet3d.registry import MODELS
 from mmengine.logging import MMLogger
 from mmengine.model import BaseModule, ModuleList
 from mmengine.model.weight_init import (constant_init, trunc_normal_,
@@ -16,7 +17,6 @@ from mmengine.model.weight_init import (constant_init, trunc_normal_,
 from mmengine.runner.checkpoint import CheckpointLoader
 from mmengine.utils import to_2tuple
 
-from mmdet3d.models.builder import BACKBONES
 from .modules.swin_utils import PatchEmbed, PatchMerging
 
 class WindowMSA(BaseModule):
@@ -175,7 +175,7 @@ class ShiftWindowMSA(BaseModule):
             proj_drop_rate=proj_drop_rate,
             init_cfg=None)
 
-        self.drop = build_dropout(dropout_layer)
+        self.drop = MODELS.build(dropout_layer)
 
     def forward(self, query, hw_shape):
         B, L, C = query.shape
@@ -463,7 +463,7 @@ class SwinBlockSequence(BaseModule):
             return x, hw_shape, x, hw_shape
 
 
-@BACKBONES.register_module()
+@MODELS.register_module()
 class Swin(BaseModule):
     """ Swin Transformer
     A PyTorch implement of : `Swin Transformer:

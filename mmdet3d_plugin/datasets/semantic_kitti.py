@@ -1,12 +1,19 @@
 import os
 import glob
 import numpy as np
-from mmdet.datasets import DATASETS
+from mmdet3d.registry import DATASETS
 from torch.utils.data import Dataset
-from mmdet.datasets.pipelines import Compose
+from mmcv.transforms import Compose
 
 @DATASETS.register_module()
 class SemanticKITTIDataset(Dataset):
+    # 20 classes with unlabeled as index 0
+    CLASSES = (
+        'unlabeled', 'car', 'bicycle', 'motorcycle', 'truck', 'other-vehicle',
+        'person', 'bicyclist', 'motorcyclist', 'road', 'parking', 'sidewalk',
+        'other-ground', 'building', 'fence', 'vegetation', 'trunk', 'terrain',
+        'pole', 'traffic-sign',
+    )
     def __init__(
         self,
         data_root,

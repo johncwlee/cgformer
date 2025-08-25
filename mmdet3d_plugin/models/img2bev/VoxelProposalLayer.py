@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from mmdet.models import HEADS
-from mmcv.runner import BaseModule
+from mmengine.model import BaseModule
+from mmdet3d.registry import MODELS
 from .modules.utils import Voxelization
 import spconv.pytorch as spconv
 
-@HEADS.register_module()
+@MODELS.register_module()
 class VoxelProposalLayer(BaseModule):
     def __init__(
         self,

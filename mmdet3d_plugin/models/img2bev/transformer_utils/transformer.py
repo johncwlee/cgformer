@@ -15,15 +15,14 @@ import torch.nn as nn
 import numpy as np
 from torch.nn.init import normal_
 from torchvision.transforms.functional import rotate
-from mmdet.models.utils.builder import TRANSFORMER
-from mmcv.runner import force_fp32, auto_fp16
-from mmcv.cnn import xavier_init
-from mmcv.cnn.bricks.transformer import build_transformer_layer_sequence
-from mmcv.runner.base_module import BaseModule
+
+from mmdet3d.registry import MODELS
+from mmengine.model import BaseModule
+from mmdet3d_plugin.utils.decorators import auto_fp16, force_fp32
 from .deformable_self_attention import DeformSelfAttention
 from .deformable_cross_attention import MSDeformableAttention3D
 
-@TRANSFORMER.register_module()
+@MODELS.register_module()
 class PerceptionTransformer(BaseModule):
     """Implements the Detr3D transformer.
     Args:
@@ -48,7 +47,7 @@ class PerceptionTransformer(BaseModule):
                  rotate_center=[100, 100],
                  **kwargs):
         super(PerceptionTransformer, self).__init__(**kwargs)
-        self.encoder = build_transformer_layer_sequence(encoder)
+        self.encoder = MODELS.build(encoder)
         self.embed_dims = embed_dims
         self.num_feature_levels = num_feature_levels
         self.num_cams = num_cams
@@ -201,7 +200,7 @@ class PerceptionTransformer(BaseModule):
         
         return bev_embed
 
-@TRANSFORMER.register_module()
+@MODELS.register_module()
 class PerceptionTransformer_DFA3D(PerceptionTransformer):
     @auto_fp16(apply_to=('mlvl_feats', 'bev_queries', 'prev_bev', 'bev_pos'))
     def get_vox_features(
@@ -280,7 +279,7 @@ class PerceptionTransformer_DFA3D(PerceptionTransformer):
         return bev_embed
 
 
-@TRANSFORMER.register_module()
+@MODELS.register_module()
 class PerceptionTransformer_DFA3D_PE(PerceptionTransformer_DFA3D):
     @auto_fp16(apply_to=('mlvl_feats', 'bev_queries', 'prev_bev', 'bev_pos'))
     def get_vox_features(

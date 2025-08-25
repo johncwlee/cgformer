@@ -1,7 +1,7 @@
 import torch
-import pytorch_lightning as pl
+from lightning.pytorch import LightningModule
 
-class LightningBaseModel(pl.LightningModule):
+class LightningBaseModel(LightningModule):
     def __init__(self, config):
         super().__init__()
         self.config = config

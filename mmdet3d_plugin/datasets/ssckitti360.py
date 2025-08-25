@@ -2,9 +2,9 @@ import os
 import glob
 import numpy as np
 import pandas as pd
-from mmdet.datasets import DATASETS
+from mmdet3d.registry import DATASETS
 from torch.utils.data import Dataset
-from mmdet.datasets.pipelines import Compose
+from mmcv.transforms import Compose
 
 @DATASETS.register_module()
 class SSCKITTI360Dataset(Dataset):

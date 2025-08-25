@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mmcv.cnn import ConvModule
+from mmdet3d.registry import MODELS
 from mmengine.model import BaseModule
-from mmdet.models import NECKS
 
-@NECKS.register_module()
+@MODELS.register_module()
 class GeneralizedLSSFPN(BaseModule):
     def __init__(
         self,

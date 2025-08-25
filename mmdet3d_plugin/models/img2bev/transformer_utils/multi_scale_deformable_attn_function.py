@@ -5,8 +5,8 @@
 # ---------------------------------------------
 
 import torch
-from torch.cuda.amp import custom_bwd, custom_fwd
 from torch.autograd.function import Function, once_differentiable
+from mmdet3d_plugin.utils.decorators import custom_bwd, custom_fwd
 from mmcv.utils import ext_loader
 ext_module = ext_loader.load_ext(
     '_ext', ['ms_deform_attn_backward', 'ms_deform_attn_forward'])

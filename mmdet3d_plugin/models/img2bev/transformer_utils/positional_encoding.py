@@ -5,9 +5,9 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from mmcv.cnn.bricks.transformer import POSITIONAL_ENCODING
-from mmcv.runner import BaseModule
-from mmdet.models.utils.transformer import inverse_sigmoid
+from mmengine.model import BaseModule
+from mmdet3d.registry import MODELS
+from mmdet3d_plugin.utils.sigmoid import inverse_sigmoid
 
 
 def pos2posemb3d(pos, num_pos_feats=128, temperature=10000):
@@ -39,7 +39,7 @@ def pos2posemb3d(pos, num_pos_feats=128, temperature=10000):
     return posemb
 
 
-@POSITIONAL_ENCODING.register_module()
+@MODELS.register_module()
 class Learned3DPositionalEncoding(BaseModule):
     """3DPosition embedding with learnable embedding weights.
 

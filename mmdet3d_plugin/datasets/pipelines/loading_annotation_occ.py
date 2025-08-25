@@ -1,9 +1,9 @@
 import torch
 import numpy as np
 from PIL import Image
-from mmdet.datasets.builder import PIPELINES
+from mmdet3d.registry import TRANSFORMS
 
-@PIPELINES.register_module()
+@TRANSFORMS.register_module()
 class LoadAnnotationOcc():
     def __init__(self, bda_aug_conf, is_train=True, apply_bda=False, 
                  point_cloud_range=[0, -25.6, -2, 51.2, 25.6, 4.4]):

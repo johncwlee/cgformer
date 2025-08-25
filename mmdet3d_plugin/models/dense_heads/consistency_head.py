@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mmdet.models import HEADS
+from mmdet3d.registry import MODELS
 
 
-@HEADS.register_module()
+@MODELS.register_module()
 class ConsistencyHead(nn.Module):
     def __init__(self, learnable_fuse: bool = False, temperature: float = 1.0, loss_weight: float = 1.0):
         super().__init__()

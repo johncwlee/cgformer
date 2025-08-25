@@ -11,7 +11,6 @@
 # ---------------------------------------------
 
 import torch
-from torch.cuda.amp import custom_bwd, custom_fwd
 from torch.autograd.function import Function, once_differentiable
 # from mmcv.utils import ext_loader
 # ext_module = ext_loader.load_ext(
@@ -20,6 +19,8 @@ from torch.autograd.function import Function, once_differentiable
 from dfa3D import ext_loader
 ext_module = ext_loader.load_ext(
     '_ext', ['wms_deform_attn_backward', 'wms_deform_attn_forward', 'ms_depth_score_sample_forward', 'ms_depth_score_sample_backward'])
+
+from mmdet3d_plugin.utils.decorators import custom_bwd, custom_fwd
 
 class WeightedMultiScaleDeformableAttnFunction_fp16(Function):
 

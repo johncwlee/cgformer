@@ -1,7 +1,7 @@
-from mmdet.datasets.builder import PIPELINES
-from mmdet.datasets.pipelines import to_tensor
+from mmdet3d.registry import TRANSFORMS
 
-@PIPELINES.register_module()
+
+@TRANSFORMS.register_module()
 class CollectData(object):
     """Collect data from the loader relevant to the specific task.
 

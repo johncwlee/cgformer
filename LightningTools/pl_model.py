@@ -2,15 +2,17 @@ import os
 import torch
 import numpy as np
 from PIL import Image
-import pytorch_lightning as pl
+
 from .basemodel import LightningBaseModel
 from .metric import SSCMetrics, SemanticSegmentationMetrics, FOVSSCMetrics
-from mmdet3d.models import build_model
+from mmdet3d.registry import MODELS
 from .utils import (
     get_inv_map, create_colored_segmentation_map, get_fov_mask,
     SEMANTIC_KITTI_COLORS
 )
-from mmcv.runner.checkpoint import load_checkpoint
+from mmengine.runner import load_checkpoint
+
+from mmdet3d_plugin.utils.registry import build_with_fallback
 
 
 class pl_model(LightningBaseModel):
@@ -20,7 +22,7 @@ class pl_model(LightningBaseModel):
         super(pl_model, self).__init__(config)
 
         model_config = config['model']
-        self.model = build_model(model_config)
+        self.model = MODELS.build(model_config)
         if 'load_from' in config:
             load_checkpoint(self.model, config['load_from'], map_location='cpu')
         
@@ -95,7 +97,7 @@ class pl_model(LightningBaseModel):
             fov_masks = self.get_fov_masks(batch)
             self.val_metrics_fov.add_batch(pred, gt, fov_masks)
     
-    def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self, outputs):
         metrics_list = [("train", self.train_metrics), ("val", self.val_metrics),
                         ("train_fov", self.train_metrics_fov), ("val_fov", self.val_metrics_fov)]
         
@@ -195,7 +197,7 @@ class pl_model(LightningBaseModel):
                 fov_masks = self.get_fov_masks(batch)
                 self.test_metrics_fov.add_batch(pred, gt_occ, fov_masks)
     
-    def test_epoch_end(self, outputs):
+    def on_test_epoch_end(self, outputs):
         metric_list = [("test", self.test_metrics), ("test_fov", self.test_metrics_fov)]
         
         metrics_list = metric_list

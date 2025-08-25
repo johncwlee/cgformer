@@ -2,11 +2,11 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-from mmdet.models import HEADS
+from mmdet3d.registry import MODELS
 from mmcv.cnn import build_conv_layer, build_norm_layer, build_upsample_layer
 from mmdet3d_plugin.utils.semkitti import geo_scal_loss, sem_scal_loss, CE_ssc_loss
 
-@HEADS.register_module()
+@MODELS.register_module()
 class plugin_segmentation_head(nn.Module):
     def __init__(
         self,

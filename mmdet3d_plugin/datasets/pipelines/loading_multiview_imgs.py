@@ -3,9 +3,9 @@ import torch
 import numpy as np
 from PIL import Image
 from torchvision import transforms
-from mmdet.datasets.builder import PIPELINES
+from mmdet3d.registry import TRANSFORMS
 
-@PIPELINES.register_module()
+@TRANSFORMS.register_module(name='CGFLoadMultiViewImageFromFiles')
 class LoadMultiViewImageFromFiles(object):
     """Load multi channel images from a list of separate channel files.
 
@@ -150,7 +150,7 @@ class LoadMultiViewImageFromFiles(object):
         seg_gt_filenames = results.get('seg_gt_filename', None)
 
         focal_length = results['focal_length']
-        baseline = results['baseline']
+        baseline = results.get('baseline', None)
 
         data_lists = []
         raw_img_list = []
@@ -229,7 +229,8 @@ class LoadMultiViewImageFromFiles(object):
             result_list.append(torch.cat([x[i] for x in data_lists], dim=0))
         
         results['focal_length'] = torch.tensor(focal_length, dtype=torch.float32)
-        results['baseline']  = torch.tensor(baseline, dtype=torch.float32)
+        if baseline is not None:
+            results['baseline']  = torch.tensor(baseline, dtype=torch.float32)
         results['raw_img'] = raw_img_list
 
         return result_list

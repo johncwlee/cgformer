@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mmdet3d.models.builder import NECKS
-from mmcv.runner import BaseModule, force_fp32
+from mmengine.model import BaseModule
+from mmdet3d.registry import MODELS
 
 from .modules.dinov2 import DINOv2
 from .modules.dpt_layers import FeatureFusionBlock
@@ -294,7 +294,7 @@ class Resize(object):
         return nn.functional.interpolate(x, (height, width), mode='bilinear', align_corners=True)
 
 
-@NECKS.register_module()
+@MODELS.register_module()
 class DepthAnything(BaseModule):
     model_names = {
         's': 'vits',

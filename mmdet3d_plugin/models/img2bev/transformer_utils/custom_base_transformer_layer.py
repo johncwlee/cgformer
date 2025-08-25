@@ -10,12 +10,10 @@ import warnings
 import torch
 import torch.nn as nn
 
-from mmcv import ConfigDict, deprecated_api_warning
+from mmengine.config import ConfigDict
 from mmcv.cnn import Linear, build_activation_layer, build_norm_layer
-from mmcv.runner.base_module import BaseModule, ModuleList, Sequential
-
-from mmcv.cnn.bricks.registry import (ATTENTION, FEEDFORWARD_NETWORK, POSITIONAL_ENCODING,
-                                      TRANSFORMER_LAYER, TRANSFORMER_LAYER_SEQUENCE)
+from mmdet3d.registry import MODELS
+from mmengine.model import BaseModule, ModuleList, Sequential
 
 # Avoid BC-breaking of importing MultiScaleDeformableAttention from this file
 try:
@@ -31,10 +29,9 @@ except ImportError:
     warnings.warn('Fail to import ``MultiScaleDeformableAttention`` from '
                   '``mmcv.ops.multi_scale_deform_attn``, '
                   'You should install ``mmcv-full`` if you need this module. ')
-from mmcv.cnn.bricks.transformer import build_feedforward_network, build_attention
 
 
-@TRANSFORMER_LAYER.register_module()
+@MODELS.register_module()
 class MyCustomBaseTransformerLayer(BaseModule):
     """Base `TransformerLayer` for vision transformer.
     It can be built from `mmcv.ConfigDict` and support more flexible
@@ -125,7 +122,7 @@ class MyCustomBaseTransformerLayer(BaseModule):
                     assert self.batch_first == attn_cfgs[index]['batch_first']
                 else:
                     attn_cfgs[index]['batch_first'] = self.batch_first
-                attention = build_attention(attn_cfgs[index])
+                attention = MODELS.build(attn_cfgs[index])
                 # Some custom attentions used as `self_attn`
                 # or `cross_attn` can have different behavior.
                 attention.operation_name = operation_name
@@ -148,7 +145,7 @@ class MyCustomBaseTransformerLayer(BaseModule):
                 assert ffn_cfgs[ffn_index]['embed_dims'] == self.embed_dims
 
             self.ffns.append(
-                build_feedforward_network(ffn_cfgs[ffn_index]))
+                MODELS.build(ffn_cfgs[ffn_index]))
 
         self.norms = ModuleList()
         num_norms = operation_order.count('norm')

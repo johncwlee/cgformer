@@ -1,9 +1,9 @@
 # Copyright (c) Phigent Robotics. All rights reserved.
 import torch
 import torch.nn as nn
-from mmdet3d.models.builder import NECKS
+from mmengine.model import BaseModule
+from mmdet3d.registry import MODELS
 from mmdet3d.ops.bev_pool import bev_pool
-from mmcv.runner import BaseModule
 
 def gen_dx_bx(xbound, ybound, zbound):
     dx = torch.Tensor([row[2] for row in [xbound, ybound, zbound]])
@@ -11,7 +11,7 @@ def gen_dx_bx(xbound, ybound, zbound):
     nx = torch.Tensor([(row[1] - row[0]) / row[2] for row in [xbound, ybound, zbound]])
     return dx, bx, nx
 
-@NECKS.register_module()
+@MODELS.register_module()
 class LSSViewTransformerLight(BaseModule):
     def __init__(
         self, grid_config=None, data_config=None, downsample=8,

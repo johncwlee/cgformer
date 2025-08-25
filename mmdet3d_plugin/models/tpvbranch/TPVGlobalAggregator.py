@@ -1,9 +1,8 @@
-from mmdet3d.models.builder import BACKBONES
 import torch
-from mmcv.runner import BaseModule
-from mmdet3d.models import builder
 import torch.nn as nn
 import torch.nn.functional as F
+from mmdet3d.registry import MODELS
+from mmengine.model import BaseModule
 
 class TPVPooler(BaseModule):
     def __init__(
@@ -55,7 +54,7 @@ class TPVPooler(BaseModule):
 
         return tpv_list
 
-@BACKBONES.register_module()
+@MODELS.register_module()
 class TPVGlobalAggregator(BaseModule):
     def __init__(
         self,
@@ -72,8 +71,8 @@ class TPVGlobalAggregator(BaseModule):
             embed_dims=embed_dims, split=split, grid_size=grid_size
         )
 
-        self.global_encoder_backbone = builder.build_backbone(global_encoder_backbone)
-        self.global_encoder_neck = builder.build_neck(global_encoder_neck)
+        self.global_encoder_backbone = MODELS.build(global_encoder_backbone)
+        self.global_encoder_neck = MODELS.build(global_encoder_neck)
     
     def forward(self, x):
         """
@@ -93,6 +92,9 @@ class TPVGlobalAggregator(BaseModule):
         tpv_list[0] = F.interpolate(tpv_list[0], size=(128, 128), mode='bilinear').unsqueeze(-1)
         tpv_list[1] = F.interpolate(tpv_list[1], size=(128, 16), mode='bilinear').unsqueeze(2)
         tpv_list[2] = F.interpolate(tpv_list[2], size=(128, 16), mode='bilinear').unsqueeze(3)
+        # tpv_list[0] = F.interpolate(tpv_list[0], size=(256, 256), mode='bilinear').unsqueeze(-1)
+        # tpv_list[1] = F.interpolate(tpv_list[1], size=(256, 16), mode='bilinear').unsqueeze(2)
+        # tpv_list[2] = F.interpolate(tpv_list[2], size=(256, 16), mode='bilinear').unsqueeze(3)
 
         return tpv_list
     

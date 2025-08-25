@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mmdet3d.models.builder import NECKS
+from mmengine.model import BaseModule
+from mmdet3d.registry import MODELS
 from mmdet3d_plugin.utils.gaussian import generate_guassian_depth_target
-from mmcv.runner import BaseModule, force_fp32
 from torch.cuda.amp.autocast_mode import autocast
+from mmdet3d_plugin.utils.decorators import force_fp32
 from .modules.Mono_DepthNet_modules import DepthNet
 from .modules.Stereo_Depth_Net_modules import SimpleUnet, convbn_2d, DepthAggregation
 import pdb
@@ -24,7 +25,7 @@ class StereoVolumeEncoder(nn.Module):
         x = self.conv_out(x)
         return x
 
-@NECKS.register_module()
+@MODELS.register_module()
 class GeometryDepth_Net(BaseModule):
     def __init__(
         self,

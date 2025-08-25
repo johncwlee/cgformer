@@ -2,15 +2,14 @@
 import numpy as np
 import torch
 from mmcv.cnn import build_conv_layer, build_norm_layer, build_upsample_layer
-from mmcv.runner import BaseModule, auto_fp16
 from torch import nn as nn
 
-from mmdet.models import NECKS
+from mmdet3d.registry import MODELS
+from mmengine.model import BaseModule
+from mmdet3d_plugin.utils.decorators import auto_fp16
 
-import time
-import pdb
 
-@NECKS.register_module()
+@MODELS.register_module()
 class SECONDFPN3D(BaseModule):
     """FPN used in SECOND/PointPillars/PartA2/MVXNet.
 

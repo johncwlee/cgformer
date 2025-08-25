@@ -1,10 +1,10 @@
 import os
 import torch
 import numpy as np
-from mmdet.datasets.builder import PIPELINES
+from mmdet3d.registry import TRANSFORMS
 from .learning_map import learning_map
 
-@PIPELINES.register_module()
+@TRANSFORMS.register_module()
 class CreateDepthFromLiDAR(object):
     def __init__(self,
         data_root=None,

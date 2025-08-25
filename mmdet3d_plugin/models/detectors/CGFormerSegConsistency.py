@@ -1,10 +1,9 @@
 import torch
 from torch.nn import functional as F
-from mmcv.runner import BaseModule
-from mmdet.models import DETECTORS
-from mmdet3d.models import builder
+from mmengine.model import BaseModule
+from mmdet3d.registry import MODELS
 
-@DETECTORS.register_module()
+@MODELS.register_module()
 class CGFormerSegConsistency(BaseModule):
     def __init__(
         self,
@@ -28,32 +27,32 @@ class CGFormerSegConsistency(BaseModule):
     ):
         super().__init__()
 
-        self.img_backbone = builder.build_backbone(img_backbone)
-        self.img_neck = builder.build_neck(img_neck)
+        self.img_backbone = MODELS.build(img_backbone)
+        self.img_neck = MODELS.build(img_neck)
 
-        self.depth_net = builder.build_neck(depth_net)
-        self.plugin_head = builder.build_head(plugin_head)
-        self.consistency_head = builder.build_head(consistency_head)
+        self.depth_net = MODELS.build(depth_net)
+        self.plugin_head = MODELS.build(plugin_head)
+        self.consistency_head = MODELS.build(consistency_head)
         if img_view_transformer is not None:
-            self.img_view_transformer = builder.build_neck(img_view_transformer)
-        self.proposal_layer = builder.build_head(proposal_layer)
-        self.VoxFormer_head = builder.build_head(VoxFormer_head)
+            self.img_view_transformer = MODELS.build(img_view_transformer)
+        self.proposal_layer = MODELS.build(proposal_layer)
+        self.VoxFormer_head = MODELS.build(VoxFormer_head)
 
         if occ_encoder_backbone is not None:
-            self.occ_encoder_backbone = builder.build_backbone(occ_encoder_backbone)
+            self.occ_encoder_backbone = MODELS.build(occ_encoder_backbone)
         if occ_encoder_neck is not None:
-            self.occ_encoder_neck = builder.build_neck(occ_encoder_neck)
+            self.occ_encoder_neck = MODELS.build(occ_encoder_neck)
         
-        self.pts_bbox_head = builder.build_head(pts_bbox_head)
+        self.pts_bbox_head = MODELS.build(pts_bbox_head)
         self.dual_occ_head = dual_occ_head
         if dual_occ_head:
-            self.pts_bbox_head2 = builder.build_head(pts_bbox_head)
+            self.pts_bbox_head2 = MODELS.build(pts_bbox_head)
         #TODO: add layer to fuse two occ logits instead of taking average
 
         self.depth_loss = depth_loss
         self.finetune_seg = finetune_seg
         if depth_anything is not None:
-            self.depth_anything = builder.build_neck(depth_anything)
+            self.depth_anything = MODELS.build(depth_anything)
             self.depth_anything.eval()
             for param in self.depth_anything.parameters():
                 param.requires_grad = False

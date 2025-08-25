@@ -15,11 +15,10 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-from mmdet.models import HEADS
-from mmdet.models.utils import build_transformer
-from mmcv.cnn.bricks.transformer import build_positional_encoding
+from mmdet3d.registry import MODELS
 
-@HEADS.register_module()
+
+@MODELS.register_module()
 class VoxFormerHead(nn.Module):
     def __init__(
         self,
@@ -46,9 +45,9 @@ class VoxFormerHead(nn.Module):
         self.point_cloud_range = point_cloud_range
         self.volume_embed = nn.Embedding((self.volume_h) * (self.volume_w) * (self.volume_z), self.embed_dims)
         # self.voxelize = Voxelization(point_cloud_range=point_cloud_range, spatial_shape=np.array([volume_h, volume_w, volume_z]))
-        self.positional_encoding = build_positional_encoding(positional_encoding)
-        self.cross_transformer = build_transformer(cross_transformer)
-        self.self_transformer = build_transformer(self_transformer)
+        self.positional_encoding = MODELS.build(positional_encoding)
+        self.cross_transformer = MODELS.build(cross_transformer)
+        self.self_transformer = MODELS.build(self_transformer)
 
         image_grid = self.create_grid()
         self.register_buffer('image_grid', image_grid)
@@ -176,7 +175,7 @@ class VoxFormerHead(nn.Module):
         return vox_feats_diff
 
 
-@HEADS.register_module()
+@MODELS.register_module()
 class VoxFormerHead_PE(nn.Module):
     def __init__(
         self,
@@ -258,6 +257,7 @@ class VoxFormerHead_PE(nn.Module):
             # Todo: support batch size > 1
             assert lss_volume.shape[0] == 1
             # lss_volume = self.aspp(lss_volume)
+            #* lss_volume: (1, 128, 128, 128, 16)
             lss_volume_flatten = lss_volume.flatten(2).squeeze(0).permute(1, 0)
             volume_queries = volume_queries + lss_volume_flatten
 
@@ -318,3 +318,150 @@ class VoxFormerHead_PE(nn.Module):
         vox_feats_diff = vox_feats_diff.permute(3, 0, 1, 2).unsqueeze(0)
 
         return vox_feats_diff
+
+
+# @HEADS.register_module()
+# class VoxFormerHead_PE_LSS(nn.Module):
+#     def __init__(
+#         self,
+#         *args,
+#         volume_h,
+#         volume_w,
+#         volume_z,
+#         data_config,
+#         point_cloud_range,
+#         embed_dims,
+#         cross_transformer,
+#         self_transformer,
+#         positional_encoding,
+#         mlp_prior=False,
+#         **kwargs
+#     ):
+#         super().__init__()
+#         self.volume_h = volume_h
+#         self.volume_w = volume_w
+#         self.volume_z = volume_z
+#         self.embed_dims = embed_dims
+        
+#         self.data_config = data_config
+#         self.point_cloud_range = point_cloud_range
+#         self.volume_embed = nn.Embedding((self.volume_h) * (self.volume_w) * (self.volume_z), self.embed_dims)
+
+#         self.positional_encoding = build_positional_encoding(positional_encoding)
+#         self.cross_transformer = build_transformer(cross_transformer)
+#         self.self_transformer = build_transformer(self_transformer)
+
+#         vox_coords, ref_3d = self.get_voxel_indices()
+#         self.register_buffer('vox_coords', vox_coords)
+#         self.register_buffer('ref_3d', ref_3d)
+
+#         if mlp_prior:
+#             self.mlp_prior = nn.Sequential(
+#                 nn.Linear(self.embed_dims, self.embed_dims//2),
+#                 nn.LayerNorm(self.embed_dims//2),
+#                 nn.LeakyReLU(),
+#                 nn.Linear(self.embed_dims//2, self.embed_dims)
+#             )
+#         else:
+#             self.mlp_prior = None
+#             self.mask_embed = nn.Embedding(1, self.embed_dims)
+
+#     def get_voxel_indices(self):
+#         xv, yv, zv = torch.meshgrid(
+#             torch.arange(self.volume_h), torch.arange(self.volume_w),torch.arange(self.volume_z), 
+#             indexing='ij')
+        
+#         idx = torch.arange(self.volume_h * self.volume_w * self.volume_z)
+#         vox_coords = torch.cat([xv.reshape(-1, 1), yv.reshape(-1, 1), zv.reshape(-1, 1), idx.reshape(-1, 1)], dim=-1)
+
+#         ref_3d = torch.cat(
+#             [(xv.reshape(-1, 1) + 0.5) / self.volume_h, 
+#              (yv.reshape(-1, 1) + 0.5) / self.volume_w, 
+#              (zv.reshape(-1, 1) + 0.5) / self.volume_z], dim=-1
+#         )
+
+#         return vox_coords, ref_3d
+    
+#     def forward(self, mlvl_feats, proposal, cam_params, lss_volume=None, img_metas=None,  **kwargs):
+#         """ Forward funtion.
+#         Args:
+#             mlvl_feats (tuple[Tensor]): Features from the upstream
+#                 network, each is a 5D-tensor with shape
+#                 (B, N, C, H, W).
+#             img_metas: Meta information
+#             depth: Pre-estimated depth map, (B, 1, H_d, W_d)
+#             cam_params: Transformation matrix, (rots, trans, intrins, post_rots, post_trans, bda)
+#         """
+#         bs, num_cam, _, _, _ = mlvl_feats[0].shape
+#         dtype, device = mlvl_feats[0].dtype, mlvl_feats[0].device        
+
+#         volume_queries = self.volume_embed.weight.to(dtype)
+        
+#         vox_coords, ref_3d = self.vox_coords.clone(), self.ref_3d.clone()
+#         #* vox_coords: (h*w*z, 4); [x, y, z, idx]
+#         #* ref_3d: (h*w*z, 3); [x, y, z]
+        
+#         #? Get 3D PE for voxel centers
+#         voxel_3d_pe = self.positional_encoding(ref_3d)
+        
+#         #? Add LSS volume to initial voxel volume queries
+#         #* lss volume is derived from context features * depth distribution (LSS)
+#         if lss_volume is not None:
+#             # Todo: support batch size > 1
+#             assert lss_volume.shape[0] == 1
+#             lss_volume_flatten = lss_volume.flatten(2).squeeze(0).permute(1, 0)
+#             #? Add 3D PE to LSS volume
+#             lss_volume_flatten = lss_volume_flatten + voxel_3d_pe
+#             volume_queries = volume_queries + lss_volume_flatten
+
+#         if proposal.sum() < 2:
+#             proposal = torch.ones_like(proposal)
+        
+#         unmasked_idx = torch.nonzero(proposal.reshape(-1) > 0).view(-1)
+#         masked_idx = torch.nonzero(proposal.reshape(-1) == 0).view(-1)
+#         # Compute seed features of query proposals by deformable cross attention
+        
+#         seed_feats = self.cross_transformer.get_vox_features(
+#             mlvl_feats, #* context features: list[tensor]; each tensor is (B, N, C, H, W)
+#             volume_queries, #* initial voxel volume queries: (h*w*z, dim)
+#             self.volume_h,
+#             self.volume_w,
+#             ref_3d=ref_3d,  #* normalized 3D coordinates of voxel centers: (h*w*z, 3)
+#             vox_coords=vox_coords,  #* voxel indices: (h*w*z, 4); [x, y, z, idx]
+#             unmasked_idx=unmasked_idx, #* indices of unmasked voxels: (n,); n is the number of unmasked voxels
+#             grid_length=None,
+#             bev_pos=None, #* bev positional embeddings for cross attention: (1, dim 512, 512)
+#             img_metas=img_metas,
+#             prev_bev=None,
+#             cam_params=cam_params,
+#             **kwargs
+#         )
+
+#         vox_feats = torch.empty((self.volume_h, self.volume_w, self.volume_z, self.embed_dims), device=volume_queries.device)
+#         vox_feats_flatten = vox_feats.reshape(-1, self.embed_dims)
+#         vox_feats_flatten[vox_coords[unmasked_idx, 3], :] = seed_feats[0]
+#         if self.mlp_prior is None:
+#             vox_feats_flatten[vox_coords[masked_idx, 3], :] = self.mask_embed.weight.view(1, self.embed_dims).expand(masked_idx.shape[0], self.embed_dims).to(dtype)
+#         else:
+#             vox_feats_flatten[vox_coords[masked_idx, 3], :] = self.mlp_prior(lss_volume_flatten[masked_idx, :])
+
+#         vox_feats_diff = self.self_transformer.diffuse_vox_features(
+#             mlvl_feats,
+#             vox_feats_flatten,
+#             512,
+#             512,
+#             ref_3d=ref_3d,
+#             vox_coords=vox_coords,
+#             unmasked_idx=unmasked_idx,
+#             grid_length=None,
+#             bev_pos=voxel_3d_pe,
+#             img_metas=img_metas,
+#             prev_bev=None,
+#             cam_params=cam_params,
+#             **kwargs
+#         )
+
+#         vox_feats_diff = vox_feats_diff.reshape(self.volume_h, self.volume_w, self.volume_z, self.embed_dims)
+#         vox_feats_diff = vox_feats_diff.permute(3, 0, 1, 2).unsqueeze(0)
+
+#         return vox_feats_diff

@@ -19,12 +19,12 @@ import cv2 as cv
 import mmcv
 import copy
 import warnings
-from mmcv.cnn.bricks.registry import (ATTENTION, TRANSFORMER_LAYER, TRANSFORMER_LAYER_SEQUENCE)
+from mmdet3d.registry import MODELS
 from mmcv.cnn.bricks.transformer import TransformerLayerSequence
-from mmcv.runner import force_fp32, auto_fp16
 from mmcv.utils import ext_loader
-from mmdet.models.utils.transformer import inverse_sigmoid
 # from projects.mmdet3d_plugin.models.utils.visual import save_tensor
+from mmdet3d_plugin.utils.decorators import force_fp32, auto_fp16
+from mmdet3d_plugin.utils.sigmoid import inverse_sigmoid
 from .custom_base_transformer_layer import MyCustomBaseTransformerLayer
 
 ext_module = ext_loader.load_ext(
@@ -60,7 +60,7 @@ def pos2posemb3d(pos, num_pos_feats=128, temperature=10000):
     return posemb
 
 
-@TRANSFORMER_LAYER_SEQUENCE.register_module()
+@MODELS.register_module()
 class VoxFormerEncoder(TransformerLayerSequence):
 
     """
@@ -282,7 +282,7 @@ class VoxFormerEncoder(TransformerLayerSequence):
 
         return output
     
-@TRANSFORMER_LAYER_SEQUENCE.register_module()
+@MODELS.register_module()
 class VoxFormerEncoder_DFA3D(VoxFormerEncoder):
     def __init__(
         self,
@@ -366,7 +366,7 @@ class VoxFormerEncoder_DFA3D(VoxFormerEncoder):
         return reference_points_cam, volume_mask
 
 
-@TRANSFORMER_LAYER_SEQUENCE.register_module()
+@MODELS.register_module()
 class VoxFormerEncoder_DFA3D_PE(VoxFormerEncoder_DFA3D):
     def __init__(
         self,
@@ -596,7 +596,7 @@ class VoxFormerEncoder_DFA3D_PE(VoxFormerEncoder_DFA3D):
 
         return points
 
-@TRANSFORMER_LAYER.register_module()
+@MODELS.register_module()
 class VoxFormerLayer(MyCustomBaseTransformerLayer):
     """Implements encoder layer in DETR transformer.
     Args:

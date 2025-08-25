@@ -1,9 +1,9 @@
 import torch.utils.checkpoint as checkpoint
 from torch import nn
-from mmcv.runner import BaseModule
+from mmdet3d.registry import MODELS
+from mmengine.model import BaseModule
 
 from mmcv.cnn.bricks.conv_module import ConvModule
-from mmdet.models import BACKBONES
 from mmdet.models.backbones.resnet import Bottleneck
 from mmcv.cnn import build_conv_layer, build_norm_layer, build_plugin_layer
 from timm.layers import DropPath
@@ -96,7 +96,7 @@ class BasicBlock(BaseModule):
 
         return out
 
-@BACKBONES.register_module()
+@MODELS.register_module()
 class CustomResNet2D(nn.Module):
 
     def __init__(
@@ -220,7 +220,7 @@ class BasicBlock3D(nn.Module):
         return self.relu(x)
 
 
-@BACKBONES.register_module()
+@MODELS.register_module()
 class CustomResNet3D(nn.Module):
 
     def __init__(

@@ -1,11 +1,11 @@
 import timm
 import torch
 import torch.nn as nn
-from mmcv.runner import BaseModule
-from mmdet3d.models.builder import BACKBONES
+from mmdet3d.registry import MODELS
+from mmengine.model import BaseModule
 import torch.utils.model_zoo as model_zoo
 
-@BACKBONES.register_module()
+@MODELS.register_module()
 class CustomResNet(BaseModule):
     def __init__(
         self,
