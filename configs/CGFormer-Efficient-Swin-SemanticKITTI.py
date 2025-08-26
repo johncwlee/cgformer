@@ -46,7 +46,7 @@ data_config={
 }
 
 train_pipeline = [
-    dict(type='LoadMultiViewImageFromFiles', data_config=data_config, load_stereo_depth=True,
+    dict(type='CGFLoadMultiViewImageFromFiles', data_config=data_config, load_stereo_depth=True,
          is_train=True, color_jitter=(0.4, 0.4, 0.4)),
     dict(type='CreateDepthFromLiDAR', data_root=data_root, dataset='kitti', load_seg=False),
     dict(type='LoadAnnotationOcc', bda_aug_conf=bda_aug_conf, apply_bda=False,
@@ -56,6 +56,7 @@ train_pipeline = [
 ]
 
 trainset_config=dict(
+    _scope_='mmdet3d',
     type=dataset_type,
     stereo_depth_root=stereo_depth_root,
     data_root=data_root,
@@ -69,7 +70,7 @@ trainset_config=dict(
 )
 
 test_pipeline = [
-    dict(type='LoadMultiViewImageFromFiles', data_config=data_config, load_stereo_depth=True,
+    dict(type='CGFLoadMultiViewImageFromFiles', data_config=data_config, load_stereo_depth=True,
          is_train=False, color_jitter=None),
     dict(type='CreateDepthFromLiDAR', data_root=data_root, dataset='kitti'),
     dict(type='LoadAnnotationOcc', bda_aug_conf=bda_aug_conf, apply_bda=False,
@@ -79,6 +80,7 @@ test_pipeline = [
 ]
 
 testset_config=dict(
+    _scope_='mmdet3d',
     type=dataset_type,
     stereo_depth_root=stereo_depth_root,
     data_root=data_root,
@@ -132,6 +134,7 @@ _num_layers_self_ = 2
 _num_points_self_ = 8
 
 model = dict(
+    _scope_='mmdet3d',
     type='CGFormer',
     img_backbone=dict(
         type='CustomEfficientNet',
@@ -255,7 +258,7 @@ model = dict(
                    ffn_dropout=0.1,
                    operation_order=('self_attn', 'norm', 'ffn', 'norm')))),
         positional_encoding=dict(
-            type='LearnedPositionalEncoding',
+            type='mmdet.LearnedPositionalEncoding',
             num_feats=_pos_dim_,
             row_num_embed=512,
             col_num_embed=512,

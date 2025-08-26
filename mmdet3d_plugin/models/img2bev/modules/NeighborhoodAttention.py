@@ -25,7 +25,7 @@ from torch import nn
 from torch.nn.functional import pad
 from torch.nn.init import trunc_normal_
 
-from natten.functional import natten2dav, natten2dqkrpb
+from natten.functional import na2d_av, na2d_qk
 
 from natten import NeighborhoodAttention2D
 
@@ -89,10 +89,10 @@ class NeighborhoodCrossAttention2D(nn.Module):
         k, v = kv[0], kv[1]
 
         q = q * self.scale
-        attn = natten2dqkrpb(q, k, self.rpb, self.kernel_size, self.dilation)
+        attn = na2d_qk(q, k, self.kernel_size, self.dilation, rpb=self.rpb)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
-        x = natten2dav(attn, v, self.kernel_size, self.dilation)
+        x = na2d_av(attn, v, self.kernel_size, self.dilation)
         x = x.permute(0, 2, 3, 1, 4).reshape(B, H, W, C)
         if pad_r or pad_b:
             x = x[:, :Hp, :Wp, :]

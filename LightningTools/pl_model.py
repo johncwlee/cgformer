@@ -12,7 +12,6 @@ from .utils import (
 )
 from mmengine.runner import load_checkpoint
 
-from mmdet3d_plugin.utils.registry import build_with_fallback
 
 
 class pl_model(LightningBaseModel):
@@ -97,28 +96,30 @@ class pl_model(LightningBaseModel):
             fov_masks = self.get_fov_masks(batch)
             self.val_metrics_fov.add_batch(pred, gt, fov_masks)
     
-    def on_validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
         metrics_list = [("train", self.train_metrics), ("val", self.val_metrics),
                         ("train_fov", self.train_metrics_fov), ("val_fov", self.val_metrics_fov)]
         
+        metric_device = torch.device("cuda", torch.cuda.current_device()) if torch.cuda.is_available() else self.device
+
         for prefix, metric in metrics_list:
             stats = metric.get_stats()
 
             if not self.pretrain:
-                self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_ssc_mean"], dtype=torch.float32), sync_dist=True)
+                self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_ssc_mean"], dtype=torch.float32, device=metric_device), sync_dist=True)
                 #? Add IoU for each class
                 for name, iou in zip(self.class_names[1:], stats['iou_ssc'][1:]):
-                    self.log("{}/IoU_{}".format(prefix, name), torch.tensor(iou, dtype=torch.float32), sync_dist=True)
-                self.log("{}/IoU".format(prefix), torch.tensor(stats["iou"], dtype=torch.float32), sync_dist=True)
+                    self.log("{}/IoU_{}".format(prefix, name), torch.tensor(iou, dtype=torch.float32, device=metric_device), sync_dist=True)
+                self.log("{}/IoU".format(prefix), torch.tensor(stats["iou"], dtype=torch.float32, device=metric_device), sync_dist=True)
                 if "precision" in stats:
-                    self.log("{}/Precision".format(prefix), torch.tensor(stats["precision"], dtype=torch.float32), sync_dist=True)
+                    self.log("{}/Precision".format(prefix), torch.tensor(stats["precision"], dtype=torch.float32, device=metric_device), sync_dist=True)
                 if "recall" in stats:
-                    self.log("{}/Recall".format(prefix), torch.tensor(stats["recall"], dtype=torch.float32), sync_dist=True)
+                    self.log("{}/Recall".format(prefix), torch.tensor(stats["recall"], dtype=torch.float32, device=metric_device), sync_dist=True)
             else:
-                self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_mean"], dtype=torch.float32), sync_dist=True)
+                self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_mean"], dtype=torch.float32, device=metric_device), sync_dist=True)
                 #? Add IoU for each class
                 for name, iou in zip(self.class_names[1:], stats['iou_class'][1:]):
-                    self.log("{}/{}".format(prefix, name), torch.tensor(iou, dtype=torch.float32), sync_dist=True)
+                    self.log("{}/{}".format(prefix, name), torch.tensor(iou, dtype=torch.float32, device=metric_device), sync_dist=True)
             metric.reset()
     
     def test_step(self, batch, batch_idx):
@@ -197,10 +198,11 @@ class pl_model(LightningBaseModel):
                 fov_masks = self.get_fov_masks(batch)
                 self.test_metrics_fov.add_batch(pred, gt_occ, fov_masks)
     
-    def on_test_epoch_end(self, outputs):
+    def on_test_epoch_end(self):
         metric_list = [("test", self.test_metrics), ("test_fov", self.test_metrics_fov)]
         
         metrics_list = metric_list
+        metric_device = torch.device("cuda", torch.cuda.current_device()) if torch.cuda.is_available() else self.device
         for prefix, metric in metrics_list:
             stats = metric.get_stats()
 
@@ -208,18 +210,18 @@ class pl_model(LightningBaseModel):
                 for name, iou in zip(self.class_names, stats['iou_ssc']):
                     print(name + ":", iou)
 
-                self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_ssc_mean"], dtype=torch.float32), sync_dist=True)
-                self.log("{}/IoU".format(prefix), torch.tensor(stats["iou"], dtype=torch.float32), sync_dist=True)
+                self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_ssc_mean"], dtype=torch.float32, device=metric_device), sync_dist=True)
+                self.log("{}/IoU".format(prefix), torch.tensor(stats["iou"], dtype=torch.float32, device=metric_device), sync_dist=True)
                 if "precision" in stats:
-                    self.log("{}/Precision".format(prefix), torch.tensor(stats["precision"], dtype=torch.float32), sync_dist=True)
+                    self.log("{}/Precision".format(prefix), torch.tensor(stats["precision"], dtype=torch.float32, device=metric_device), sync_dist=True)
                 if "recall" in stats:
-                    self.log("{}/Recall".format(prefix), torch.tensor(stats["recall"], dtype=torch.float32), sync_dist=True)
+                    self.log("{}/Recall".format(prefix), torch.tensor(stats["recall"], dtype=torch.float32, device=metric_device), sync_dist=True)
             else:
                 #? Add IoU for each class
                 for name, iou in zip(self.class_names[1:], stats['iou_class'][1:]):
-                    self.log("{}/{}".format(prefix, name), torch.tensor(iou, dtype=torch.float32), sync_dist=True)
+                    self.log("{}/{}".format(prefix, name), torch.tensor(iou, dtype=torch.float32, device=metric_device), sync_dist=True)
 
-                self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_mean"], dtype=torch.float32), sync_dist=True)
+                self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_mean"], dtype=torch.float32, device=metric_device), sync_dist=True)
             metric.reset()
 
     def get_fov_masks(self, batch):
