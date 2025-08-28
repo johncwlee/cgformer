@@ -97,8 +97,9 @@ class pl_model(LightningBaseModel):
             self.val_metrics_fov.add_batch(pred, gt, fov_masks)
     
     def on_validation_epoch_end(self):
-        metrics_list = [("train", self.train_metrics), ("val", self.val_metrics),
-                        ("train_fov", self.train_metrics_fov), ("val_fov", self.val_metrics_fov)]
+        metrics_list = [("train", self.train_metrics), ("val", self.val_metrics)]
+        if not self.pretrain:
+            metrics_list.extend([("train_fov", self.train_metrics_fov), ("val_fov", self.val_metrics_fov)])
         
         metric_device = torch.device("cuda", torch.cuda.current_device()) if torch.cuda.is_available() else self.device
 
@@ -199,7 +200,9 @@ class pl_model(LightningBaseModel):
                 self.test_metrics_fov.add_batch(pred, gt_occ, fov_masks)
     
     def on_test_epoch_end(self):
-        metric_list = [("test", self.test_metrics), ("test_fov", self.test_metrics_fov)]
+        metric_list = [("test", self.test_metrics)]
+        if not self.pretrain:
+            metric_list.extend([("test_fov", self.test_metrics_fov)])
         
         metrics_list = metric_list
         metric_device = torch.device("cuda", torch.cuda.current_device()) if torch.cuda.is_available() else self.device
