@@ -70,7 +70,7 @@ class CGFormer(BaseModule):
         img_enc_feats = self.image_encoder(img_inputs[0])
 
         mlp_input = self.depth_net.get_mlp_input(*img_inputs[1:7])
-        context, depth = self.depth_net([img_enc_feats] + img_inputs[1:7] + [mlp_input], img_metas)
+        context, depth_logits, depth = self.depth_net([img_enc_feats] + img_inputs[1:7] + [mlp_input], img_metas)
         
         if hasattr(self, 'img_view_transformer'):
             coarse_queries = self.img_view_transformer(context, depth, img_inputs[1:7])
@@ -88,7 +88,7 @@ class CGFormer(BaseModule):
             mlvl_dpt_dists=[depth.unsqueeze(1)]
         )
 
-        return x, depth
+        return x, depth_logits
     
     def occ_encoder(self, x):
         if hasattr(self, 'occ_encoder_backbone'):
@@ -107,7 +107,7 @@ class CGFormer(BaseModule):
         if self.depth_anything is not None:
             img_metas['stereo_depth'] = self.depth_anything(img_inputs[0])
 
-        img_voxel_feats, depth = self.extract_img_feat(img_inputs, img_metas)
+        img_voxel_feats, depth_logits = self.extract_img_feat(img_inputs, img_metas)
         voxel_feats_enc = self.occ_encoder(img_voxel_feats)
         
         if len(voxel_feats_enc) > 1:
@@ -125,8 +125,8 @@ class CGFormer(BaseModule):
 
         losses = dict()
 
-        if self.depth_loss and depth is not None:
-            losses['loss_depth'] = self.depth_net.get_depth_loss(img_inputs['gt_depths'], depth)
+        if self.depth_loss and depth_logits is not None:
+            losses['loss_depth'] = self.depth_net.get_depth_loss(img_inputs['gt_depths'], depth_logits)
 
         losses_occupancy = self.pts_bbox_head.loss(
             output_voxels=output['output_voxels'],
@@ -153,7 +153,7 @@ class CGFormer(BaseModule):
         if self.depth_anything is not None:
             img_metas['stereo_depth'] = self.depth_anything(img_inputs[0])
 
-        img_voxel_feats, depth = self.extract_img_feat(img_inputs, img_metas)
+        img_voxel_feats, _ = self.extract_img_feat(img_inputs, img_metas)
         voxel_feats_enc = self.occ_encoder(img_voxel_feats)
 
         if len(voxel_feats_enc) > 1:

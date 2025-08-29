@@ -83,7 +83,7 @@ class CGFormerSegConsistency(BaseModule):
         img_enc_feats = self.image_encoder(img_inputs[0])
 
         mlp_input = self.depth_net.get_mlp_input(*img_inputs[1:7])
-        context, depth = self.depth_net([img_enc_feats] + img_inputs[1:7] + [mlp_input], img_metas)
+        context, depth_logits, depth = self.depth_net([img_enc_feats] + img_inputs[1:7] + [mlp_input], img_metas)
 
         if hasattr(self, 'img_view_transformer'):
             coarse_queries = self.img_view_transformer(context, depth, img_inputs[1:7])
@@ -105,7 +105,7 @@ class CGFormerSegConsistency(BaseModule):
             b, n, d, h, w = context.shape
             context = context.view(b * n, d, h, w)
 
-        return x, context, depth
+        return x, context, depth_logits
     
     def occ_encoder(self, x):
         if hasattr(self, 'occ_encoder_backbone'):
@@ -125,7 +125,7 @@ class CGFormerSegConsistency(BaseModule):
         if self.depth_anything is not None:
             img_metas['stereo_depth'] = self.depth_anything(img_inputs[0])
 
-        img_voxel_feats, context, depth = self.extract_img_feat(img_inputs, img_metas)
+        img_voxel_feats, context, depth_logits = self.extract_img_feat(img_inputs, img_metas)
         segmentation = self.plugin_head(context)    #* (B, num_classes, H, W)
         voxel_feats_enc = self.occ_encoder(img_voxel_feats)
         
@@ -151,8 +151,8 @@ class CGFormerSegConsistency(BaseModule):
 
         losses = dict()
 
-        if self.depth_loss and depth is not None:
-            losses['loss_depth'] = self.depth_net.get_depth_loss(img_inputs['gt_depths'], depth)
+        if self.depth_loss and depth_logits is not None:
+            losses['loss_depth'] = self.depth_net.get_depth_loss(img_inputs['gt_depths'], depth_logits)
 
         if self.finetune_seg:
             losses_seg = self.plugin_head.loss(
@@ -212,7 +212,7 @@ class CGFormerSegConsistency(BaseModule):
         if self.depth_anything is not None:
             img_metas['stereo_depth'] = self.depth_anything(img_inputs[0])
 
-        img_voxel_feats, context, depth = self.extract_img_feat(img_inputs, img_metas)
+        img_voxel_feats, _, _ = self.extract_img_feat(img_inputs, img_metas)
         # segmentation = self.plugin_head(context)    #* (B, num_classes, H, W)
         voxel_feats_enc = self.occ_encoder(img_voxel_feats)
 

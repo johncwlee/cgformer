@@ -66,16 +66,16 @@ class GeometryDepth_Net(BaseModule):
         self.mono_depth = mono_depth
     
     @force_fp32()
-    def get_bce_depth_loss(self, depth_labels, depth_preds):
+    def get_bce_depth_loss(self, depth_labels, depth_logits):
         _, depth_labels = self.get_downsampled_gt_depth(depth_labels)
         # depth_labels = self._prepare_depth_gt(depth_labels)
-        depth_preds = depth_preds.permute(0, 2, 3, 1).contiguous().view(-1, self.D)
+        depth_logits = depth_logits.permute(0, 2, 3, 1).contiguous().view(-1, self.D)
         fg_mask = torch.max(depth_labels, dim=1).values > 0.0
         depth_labels = depth_labels[fg_mask]
-        depth_preds = depth_preds[fg_mask]
+        depth_logits = depth_logits[fg_mask]
         
         with autocast(enabled=False):
-            depth_loss = F.binary_cross_entropy(depth_preds, depth_labels, reduction='none').sum() / max(1.0, fg_mask.sum())
+            depth_loss = F.binary_cross_entropy_with_logits(depth_logits, depth_labels, reduction='none').sum() / max(1.0, fg_mask.sum())
         
         return depth_loss
     
@@ -211,5 +211,5 @@ class GeometryDepth_Net(BaseModule):
         stereo_volume = self.get_depth_dist(stereo_volume)
 
         depth_volume = self.depth_aggregation(stereo_volume, mono_volume)
-        depth_volume = self.get_depth_dist(depth_volume)
-        return img_feat.view(B, N, -1, H, W), depth_volume
+        depth_volume_prob = self.get_depth_dist(depth_volume)
+        return img_feat.view(B, N, -1, H, W), depth_volume, depth_volume_prob
