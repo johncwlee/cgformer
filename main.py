@@ -26,6 +26,7 @@ def parse_config():
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--log_every_n_steps', type=int, default=1000)
     parser.add_argument('--check_val_every_n_epoch', type=int, default=1)
+    parser.add_argument('--load', default=None)
     parser.add_argument('--pretrain', action='store_true')
 
     args = parser.parse_args()
@@ -52,6 +53,8 @@ if __name__ == '__main__':
     seed_everything(seed)
     num_gpu = torch.cuda.device_count()
     print(f"Number of GPUs: {num_gpu}")
+    if config.load:
+        config.load_from = config.load
     model = pl_model(config)
     
     data_dm = DataModule(config)
@@ -80,7 +83,7 @@ if __name__ == '__main__':
             log_every_n_steps=config['log_every_n_steps'],
             check_val_every_n_epoch=config['check_val_every_n_epoch']
         )
-        trainer.fit(model=model, datamodule=data_dm, ckpt_path=config.get('ckpt_path', 'last'))
+        trainer.fit(model=model, datamodule=data_dm, ckpt_path=config['ckpt_path'])
     else:
         trainer = Trainer(
             devices=[i for i in range(num_gpu)],
