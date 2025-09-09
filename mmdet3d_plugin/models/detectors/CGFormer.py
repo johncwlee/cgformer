@@ -20,6 +20,7 @@ class CGFormer(BaseModule):
         train_cfg=None,
         test_cfg=None,
         depth_anything=None,
+        distillation_head=None,
     ):
         super().__init__()
 
@@ -48,6 +49,11 @@ class CGFormer(BaseModule):
                 param.requires_grad = False
         else:
             self.depth_anything = None
+        
+        if distillation_head is not None:
+            self.distillation_head = MODELS.build(distillation_head)
+        else:
+            self.distillation_head = None
 
     def image_encoder(self, img):
         imgs = img
@@ -88,7 +94,7 @@ class CGFormer(BaseModule):
             mlvl_dpt_dists=[depth.unsqueeze(1)]
         )
 
-        return x, depth_logits
+        return x, depth_logits, depth
     
     def occ_encoder(self, x):
         if hasattr(self, 'occ_encoder_backbone'):
@@ -107,15 +113,18 @@ class CGFormer(BaseModule):
         if self.depth_anything is not None:
             img_metas['stereo_depth'] = self.depth_anything(img_inputs[0])
 
-        img_voxel_feats, depth_logits = self.extract_img_feat(img_inputs, img_metas)
+        img_voxel_feats, depth_logits, depth = self.extract_img_feat(img_inputs, img_metas)
+        
         voxel_feats_enc = self.occ_encoder(img_voxel_feats)
         
+        #TODO: not sure why we need to do this; perhaps for batch size of 1?
         if len(voxel_feats_enc) > 1:
             voxel_feats_enc = [voxel_feats_enc[0]]
         
         if type(voxel_feats_enc) is not list:
             voxel_feats_enc = [voxel_feats_enc]
         
+        #* Occ head
         output = self.pts_bbox_head(
             voxel_feats=voxel_feats_enc,
             img_metas=img_metas,
@@ -133,6 +142,18 @@ class CGFormer(BaseModule):
             target_voxels=gt_occ,
         )
         losses.update(losses_occupancy)
+        
+        if self.distillation_head is not None:
+            losses_distillation = self.distillation_head.loss(
+                voxel_feats=voxel_feats_enc[0],
+                img=img_inputs[0],
+                depth=depth,
+                lss_encoder=self.img_view_transformer,
+                img_metas=img_metas,
+                cam_params=img_inputs[1:7],
+                gt_occ=gt_occ,
+            )
+            losses.update(losses_distillation)
 
         pred = output['output_voxels']
         pred = torch.argmax(pred, dim=1)
@@ -153,7 +174,7 @@ class CGFormer(BaseModule):
         if self.depth_anything is not None:
             img_metas['stereo_depth'] = self.depth_anything(img_inputs[0])
 
-        img_voxel_feats, _ = self.extract_img_feat(img_inputs, img_metas)
+        img_voxel_feats, _, _ = self.extract_img_feat(img_inputs, img_metas)
         voxel_feats_enc = self.occ_encoder(img_voxel_feats)
 
         if len(voxel_feats_enc) > 1:

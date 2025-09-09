@@ -6,3 +6,4 @@ from .VoxelProposalLayer import VoxelProposalLayer
 from .VoxFormerHead import VoxFormerHead
 from .LSSViewTransformerLight import LSSViewTransformerLight
 from .depth_anything import DepthAnything
+from .FeatureDistillation import FeatureDistillationHead
