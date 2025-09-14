@@ -23,6 +23,10 @@ class_names = [
 ]
 num_class = len(class_names)
 
+rare_class_names = ['bicycle', 'motorcycle', 'truck', 'other-vehicle', 
+                    'person', 'bicyclist', 'motorcyclist', 'traffic-sign']
+rare_class_indices = [2, 3, 4, 5, 6, 7, 8, 19]
+
 # dataset config #
 bda_aug_conf = dict(
     rot_lim=(-22.5, 22.5),

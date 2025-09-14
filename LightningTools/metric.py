@@ -142,6 +142,72 @@ class SSCMetrics:
         
         return tp_sum, fp_sum, fn_sum
 
+
+class GroupedSSCMetrics(SSCMetrics):
+    def __init__(self, n_classes, rare_classes):
+        self.rare_class_indices = rare_classes
+        assert rare_classes is not None and len(rare_classes) > 0, "Rare classes must be specified"
+
+        # Number of classes after grouping (all rare merged into one)
+        num_classes = n_classes - len(rare_classes) + 1
+        super(GroupedSSCMetrics, self).__init__(num_classes)
+
+        # Build a mapping from original class ids -> grouped contiguous ids
+        # Keep the largest rare index as the representative in order, but remap
+        # to contiguous indices [0, num_classes-1] for metric computation.
+        self.original_num_classes = n_classes
+        self.agg_old_index = int(max(self.rare_class_indices))
+
+        kept_indices = [i for i in range(n_classes)
+                        if (i not in self.rare_class_indices) or (i == self.agg_old_index)]
+        # kept_indices are in ascending order; the representative rare class will naturally
+        # become the last index if it's the max of the rare set.
+        self.old_to_new = np.zeros(n_classes, dtype=np.int32)
+        for new_idx, old_idx in enumerate(kept_indices):
+            self.old_to_new[old_idx] = new_idx
+        # Map all rare classes to the representative new index
+        self.agg_new_index = int(self.old_to_new[self.agg_old_index])
+        for r in self.rare_class_indices:
+            self.old_to_new[r] = self.agg_new_index
+
+    def _remap_labels(self, labels: np.ndarray) -> np.ndarray:
+        # Preserve ignore index 255
+        mapped = np.copy(labels)
+        valid = mapped != 255
+        # Ensure integer type for indexing
+        mapped = mapped.astype(np.int32, copy=False)
+        mapped[valid] = self.old_to_new[mapped[valid]]
+        return mapped
+    
+    def add_batch(self, y_pred, y_true, nonempty=None, nonsurface=None):
+        self.count += 1
+
+        #? Remap predictions and GT to grouped class space
+        y_pred_g = self._remap_labels(y_pred)
+        y_true_g = self._remap_labels(y_true)
+
+        mask = y_true_g != 255
+        if nonempty is not None:
+            mask = mask & nonempty
+        if nonsurface is not None:
+            mask = mask & nonsurface
+
+        tp, fp, fn = self.get_score_completion(y_pred_g, y_true_g, mask)
+        
+        self.completion_tp += tp
+        self.completion_fp += fp
+        self.completion_fn += fn
+
+        mask = y_true_g != 255
+        if nonempty is not None:
+            mask = mask & nonempty
+        tp_sum, fp_sum, fn_sum = self.get_score_semantic_and_completion(
+            y_pred_g, y_true_g, mask
+        )
+        self.tps += tp_sum
+        self.fps += fp_sum
+        self.fns += fn_sum
+
 class SemanticSegmentationMetrics:
     def __init__(self, n_classes):
         self.n_classes = n_classes

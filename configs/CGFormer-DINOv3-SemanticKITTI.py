@@ -1,7 +1,7 @@
 # ----- Dataset paths -----
-data_root = '/home/johnl/data/semantickitti'    #* change this
-ann_file = '/home/johnl/data/semantickitti/labels'  #* change this
-stereo_depth_root = '/home/johnl/data/semantickitti/depth'  #* change this
+data_root = '/home/data/semantickitti'    #* change this
+ann_file = '/home/data/semantickitti/labels'  #* change this
+stereo_depth_root = '/home/data/semantickitti/depth'  #* change this
 camera_used = ['left']
 
 # ----- Task geometry -----
@@ -24,6 +24,10 @@ class_names = [
     'pole', 'traffic-sign',
 ]
 num_class = len(class_names)
+
+rare_class_names = ['bicycle', 'motorcycle', 'truck', 'other-vehicle', 
+                    'person', 'bicyclist', 'motorcyclist', 'traffic-sign']
+rare_class_indices = [2, 3, 4, 5, 6, 7, 8, 19]
 
 # dataset config #
 bda_aug_conf = dict(
@@ -144,31 +148,33 @@ model = dict(
         pos_embed_rope_normalize_coords="separate",
         pos_embed_rope_rescale_coords=2,
         pos_embed_rope_dtype="fp32",
-        embed_dim=768,
-        depth=12,
-        num_heads=12,
-        ffn_ratio=4,
+        embed_dim=1280,  #* b: 768, l: 1024, h: 1280
+        depth=32,  #* b: 12, l: 24, h: 32
+        num_heads=20,  #* b: 12, l: 16, h: 20
+        ffn_ratio=6,  #* b,l: 4, h: 6
         qkv_bias=True,
         drop_path_rate=0.0,
         layerscale_init=1.0e-05,
         norm_layer="layernormbf16",
-        ffn_layer="mlp",
+        ffn_layer="swiglu",    #* b,l: mlp, h: swiglu
         ffn_bias=True,
         proj_bias=True,
         n_storage_tokens=4,
         mask_k_bias=True,
+        out_indices=1,  #* b: [2, 5, 8, 11]
         init_cfg=dict(type='Pretrained', prefix='backbone', 
-        checkpoint='../../misc/cgformer/ckpts/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth'),   #* change this
+        # checkpoint='../../misc/cgformer/ckpts/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth'),   #* change this
+        checkpoint='../../misc/cgformer/ckpts/dinov3_vith16plus_pretrain_lvd1689m-7c1da9a5.pth'),   #* change this
     ),
     img_neck=dict(
         type='SECONDFPN',
-        in_channels=[768, 768, 768, 768],
+        in_channels=[1280, 1280, 1280, 1280],   #* change this
         upsample_strides=[0.5, 1, 2, 4], 
-        out_channels=[128, 128, 128, 128]),
+        out_channels=[256, 256, 256, 256]), #* b,l: [128, 128, 128, 128], h: [256, 256, 256, 256]
     depth_net=dict(
         type='GeometryDepth_Net',
         downsample=8,
-        numC_input=512,
+        numC_input=1024,    #* b,l: 512, h: 1024
         numC_Trans=numC_Trans,
         cam_channels=33,
         grid_config=grid_config,
