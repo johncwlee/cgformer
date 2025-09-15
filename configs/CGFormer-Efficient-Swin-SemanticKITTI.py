@@ -369,6 +369,7 @@ model = dict(
 """Training params."""
 learning_rate=3e-4
 training_steps=25000
+ema_decay=0.999
 
 optimizer = dict(
     type="AdamW",
