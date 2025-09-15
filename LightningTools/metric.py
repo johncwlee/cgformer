@@ -41,6 +41,8 @@ class SSCMetrics:
         mask = y_true != 255
         if nonempty is not None:
             mask = mask & nonempty
+        if nonsurface is not None:
+            mask = mask & nonsurface
         tp_sum, fp_sum, fn_sum = self.get_score_semantic_and_completion(
             y_pred, y_true, mask
         )
@@ -201,6 +203,50 @@ class GroupedSSCMetrics(SSCMetrics):
         mask = y_true_g != 255
         if nonempty is not None:
             mask = mask & nonempty
+        if nonsurface is not None:
+            mask = mask & nonsurface
+        tp_sum, fp_sum, fn_sum = self.get_score_semantic_and_completion(
+            y_pred_g, y_true_g, mask
+        )
+        self.tps += tp_sum
+        self.fps += fp_sum
+        self.fns += fn_sum
+
+class FOVGroupedSSCMetrics(GroupedSSCMetrics):
+    def __init__(self, n_classes, rare_classes):
+        super(FOVGroupedSSCMetrics, self).__init__(n_classes, rare_classes)
+    
+    def add_batch(self, y_pred, y_true, 
+                  fov_mask=None, nonempty=None, nonsurface=None):
+        self.count += 1
+
+        # Remap predictions and GT to grouped class space
+        y_pred_g = self._remap_labels(y_pred)
+        y_true_g = self._remap_labels(y_true)
+
+        # Apply masks for completion (binary occupancy)
+        mask = y_true_g != 255
+        if fov_mask is not None:
+            mask = mask & fov_mask
+        if nonempty is not None:
+            mask = mask & nonempty
+        if nonsurface is not None:
+            mask = mask & nonsurface
+
+        tp, fp, fn = self.get_score_completion(y_pred_g, y_true_g, mask)
+        self.completion_tp += tp
+        self.completion_fp += fp
+        self.completion_fn += fn
+
+        # Apply masks for semantic metrics
+        mask = y_true_g != 255
+        if fov_mask is not None:
+            mask = mask & fov_mask
+        if nonempty is not None:
+            mask = mask & nonempty
+        if nonsurface is not None:
+            mask = mask & nonsurface
+
         tp_sum, fp_sum, fn_sum = self.get_score_semantic_and_completion(
             y_pred_g, y_true_g, mask
         )
@@ -315,8 +361,12 @@ class FOVSSCMetrics:
         self.completion_fn += fn
 
         mask = y_true != 255
+        if fov_mask is not None:
+            mask = mask & fov_mask
         if nonempty is not None:
             mask = mask & nonempty
+        if nonsurface is not None:
+            mask = mask & nonsurface
         tp_sum, fp_sum, fn_sum = self.get_score_semantic_and_completion(
             y_pred, y_true, mask
         )
