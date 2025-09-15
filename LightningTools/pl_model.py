@@ -4,7 +4,13 @@ import numpy as np
 from PIL import Image
 
 from .basemodel import LightningBaseModel
-from .metric import SSCMetrics, SemanticSegmentationMetrics, FOVSSCMetrics, GroupedSSCMetrics
+from .metric import (
+    SSCMetrics, 
+    SemanticSegmentationMetrics, 
+    FOVSSCMetrics, 
+    GroupedSSCMetrics, 
+    FOVGroupedSSCMetrics
+)
 from mmdet3d.registry import MODELS
 from .utils import (
     get_inv_map, create_colored_segmentation_map, get_fov_mask,
@@ -57,6 +63,10 @@ class pl_model(LightningBaseModel):
             self.train_metrics_grouped = GroupedSSCMetrics(config['num_class'], rare_class_indices)
             self.val_metrics_grouped = GroupedSSCMetrics(config['num_class'], rare_class_indices)
             self.test_metrics_grouped = GroupedSSCMetrics(config['num_class'], rare_class_indices)
+            #* Grouped FOV SSC Metrics
+            self.train_metrics_grouped_fov = FOVGroupedSSCMetrics(config['num_class'], rare_class_indices)
+            self.val_metrics_grouped_fov = FOVGroupedSSCMetrics(config['num_class'], rare_class_indices)
+            self.test_metrics_grouped_fov = FOVGroupedSSCMetrics(config['num_class'], rare_class_indices)
     
     def forward(self, data_dict):
         return self.model(data_dict)
@@ -92,6 +102,7 @@ class pl_model(LightningBaseModel):
             #? Compute FOV masks
             fov_masks = self.get_fov_masks(batch)
             self.train_metrics_fov.add_batch(pred, gt, fov_masks)
+            self.train_metrics_grouped_fov.add_batch(pred, gt, fov_masks)
         return loss
     
     def validation_step(self, batch, batch_idx):
@@ -112,12 +123,14 @@ class pl_model(LightningBaseModel):
             #? Compute FOV masks
             fov_masks = self.get_fov_masks(batch)
             self.val_metrics_fov.add_batch(pred, gt, fov_masks)
+            self.val_metrics_grouped_fov.add_batch(pred, gt, fov_masks)
     
     def on_validation_epoch_end(self):
         metrics_list = [("train", self.train_metrics), ("val", self.val_metrics)]
         if not self.pretrain:
             metrics_list.extend([("train_fov", self.train_metrics_fov), ("val_fov", self.val_metrics_fov),
-                                 ("train_grouped", self.train_metrics_grouped), ("val_grouped", self.val_metrics_grouped)])
+                                 ("train_grouped", self.train_metrics_grouped), ("val_grouped", self.val_metrics_grouped),
+                                 ("train_grouped_fov", self.train_metrics_grouped_fov), ("val_grouped_fov", self.val_metrics_grouped_fov)])
         
         metric_device = torch.device("cuda", torch.cuda.current_device()) if torch.cuda.is_available() else self.device
 
@@ -125,7 +138,8 @@ class pl_model(LightningBaseModel):
             stats = metric.get_stats()
 
             if not self.pretrain:
-                if prefix in ["train_grouped", "val_grouped"]:
+                if prefix in ["train_grouped", "val_grouped", 
+                              "train_grouped_fov", "val_grouped_fov"]:
                     #* Grouped metrics
                     self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_ssc_mean"], dtype=torch.float32, device=metric_device), sync_dist=True)
                     #? Add IoU for each class
@@ -225,11 +239,14 @@ class pl_model(LightningBaseModel):
                 #? Compute FOV masks
                 fov_masks = self.get_fov_masks(batch)
                 self.test_metrics_fov.add_batch(pred, gt_occ, fov_masks)
+                self.test_metrics_grouped_fov.add_batch(pred, gt_occ, fov_masks)
     
     def on_test_epoch_end(self):
         metric_list = [("test", self.test_metrics)]
         if not self.pretrain:
-            metric_list.extend([("test_fov", self.test_metrics_fov), ("test_grouped", self.test_metrics_grouped)])
+            metric_list.extend([("test_fov", self.test_metrics_fov), 
+                                ("test_grouped", self.test_metrics_grouped), 
+                                ("test_grouped_fov", self.test_metrics_grouped_fov)])
         
         metrics_list = metric_list
         metric_device = torch.device("cuda", torch.cuda.current_device()) if torch.cuda.is_available() else self.device
@@ -237,7 +254,7 @@ class pl_model(LightningBaseModel):
             stats = metric.get_stats()
 
             if not self.pretrain:
-                if prefix == "test_grouped":
+                if prefix in ["test_grouped", "test_grouped_fov"]:
                     #* Grouped metrics
                     self.log("{}/mIoU".format(prefix), torch.tensor(stats["iou_ssc_mean"], dtype=torch.float32, device=metric_device), sync_dist=True)
                     #? Add IoU for each class
