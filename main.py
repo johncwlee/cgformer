@@ -29,6 +29,7 @@ def parse_config():
     parser.add_argument('--check_val_every_n_epoch', type=int, default=1)
     parser.add_argument('--load', default=None)
     parser.add_argument('--pretrain', action='store_true')
+    parser.add_argument('--wandb', action='store_true')
     parser.add_argument('--offline', action='store_true')
     parser.add_argument('--project_name', type=str,default='cgformer')
     parser.add_argument('--ema', action='store_true')
@@ -44,18 +45,22 @@ if __name__ == '__main__':
     log_folder = os.path.join(config['output_dir'], config['log_folder'])
     misc.check_path(log_folder)
     
-    wandb_logger = pl_loggers.WandbLogger(
-        project=config.project_name,
-        name=config.log_folder,
-        save_dir=log_folder,
-        offline=config.offline,
-    )
+    if config.wandb:
+        wandb_logger = pl_loggers.WandbLogger(
+            project=config.project_name,
+            name=config.log_folder,
+            save_dir=log_folder,
+            offline=config.offline,
+        )
 
     misc.check_path(os.path.join(log_folder, 'tensorboard'))
     tb_logger = pl_loggers.TensorBoardLogger(
         save_dir=log_folder,
         name='tensorboard'
     )
+    loggers = [tb_logger]
+    if config.wandb:
+        loggers.append(wandb_logger)
     
     if config.ema:
         ema_callback = EMAWeightAveraging(decay=config.ema_decay)
@@ -91,7 +96,7 @@ if __name__ == '__main__':
                 checkpoint_callback,
                 LearningRateMonitor(logging_interval='step')
             ],
-            logger=[tb_logger, wandb_logger],
+            logger=loggers,
             profiler=profiler,
             sync_batchnorm=True,
             log_every_n_steps=config['log_every_n_steps'],
@@ -112,3 +117,5 @@ if __name__ == '__main__':
 
     
 
+# python3 main.py --config_path configs/CGFormer-DINOv3-SemanticKITTI.py --output_dir ../../results/cgformer --log_folder CGFormer-test --seed 7240 --log_every_n_steps 100
+# python3 main.py --config_path configs/CGFormer-Efficient-Swin-SemanticKITTI.py --output_dir ../../results/cgformer --log_folder CGFormer-test --seed 7240 --log_every_n_steps 100
