@@ -85,6 +85,13 @@ if __name__ == '__main__':
         filename='best')
     
     if not config.eval:
+        callbacks=[
+            checkpoint_callback,
+            LearningRateMonitor(logging_interval='step')
+        ]
+        if config.ema:
+            callbacks.append(ema_callback)
+
         trainer = Trainer(
             devices=[i for i in range(num_gpu)],
             strategy=DDPStrategy(
@@ -92,10 +99,7 @@ if __name__ == '__main__':
                 find_unused_parameters=False
             ),
             max_steps=config.training_steps,
-            callbacks=[
-                checkpoint_callback,
-                LearningRateMonitor(logging_interval='step')
-            ],
+            callbacks=callbacks,
             logger=loggers,
             profiler=profiler,
             sync_batchnorm=True,

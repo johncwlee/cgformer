@@ -223,7 +223,8 @@ class WeightAveraging(Callback):
             pl_module: The current :class:`~lightning.pytorch.core.LightningModule` instance.
 
         """
-        if self._average_model is not None:
+        # Only swap if we have performed at least one EMA update
+        if self._average_model is not None and self._latest_update_step > 0:
             self._swap_models(pl_module)
 
     @override
@@ -237,7 +238,8 @@ class WeightAveraging(Callback):
             pl_module: The current :class:`~lightning.pytorch.core.LightningModule` instance.
 
         """
-        if self._average_model is not None:
+        # Only swap back if we had swapped at start (i.e., EMA has been updated)
+        if self._average_model is not None and self._latest_update_step > 0:
             self._swap_models(pl_module)
 
     @override
