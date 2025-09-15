@@ -69,7 +69,7 @@ if __name__ == '__main__':
     profiler = SimpleProfiler(dirpath=log_folder, filename="profiler.txt")
 
     seed = config.seed
-    seed_everything(seed)
+    seed_everything(seed, workers=True)
     num_gpu = torch.cuda.device_count()
     print(f"Number of GPUs: {num_gpu}")
     if config.load:
