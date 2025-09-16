@@ -12,6 +12,7 @@ from lightning.pytorch.profilers import SimpleProfiler               # profiler 
 from lightning.pytorch.strategies import DDPStrategy                 # distributed strategies
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor  # callbacks
 from LightningTools.weight_averaging import EMAWeightAveraging
+from LightningTools.wandb import CustomWandbLogger
 
 
 def parse_config():
@@ -46,7 +47,7 @@ if __name__ == '__main__':
     misc.check_path(log_folder)
     
     if config.wandb:
-        wandb_logger = pl_loggers.WandbLogger(
+        wandb_logger = CustomWandbLogger(
             project=config.project_name,
             name=config.log_folder,
             save_dir=log_folder,
