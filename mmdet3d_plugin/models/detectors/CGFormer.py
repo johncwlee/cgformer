@@ -93,6 +93,9 @@ class CGFormer(BaseModule):
             img_metas=img_metas,
             mlvl_dpt_dists=[depth.unsqueeze(1)]
         )
+        
+        if self.training:
+            return x, depth_logits, depth, img_enc_feats
 
         return x, depth_logits, depth
     
@@ -113,7 +116,7 @@ class CGFormer(BaseModule):
         if self.depth_anything is not None:
             img_metas['stereo_depth'] = self.depth_anything(img_inputs[0])
 
-        img_voxel_feats, depth_logits, depth = self.extract_img_feat(img_inputs, img_metas)
+        img_voxel_feats, depth_logits, depth, img_feats = self.extract_img_feat(img_inputs, img_metas)
         
         voxel_feats_enc = self.occ_encoder(img_voxel_feats)
         
@@ -144,7 +147,10 @@ class CGFormer(BaseModule):
         losses.update(losses_occupancy)
         
         if self.distillation_head is not None:
+            B, N, C, H, W = img_feats.shape
+            img_feats = img_feats.view(B * N, C, H, W)
             losses_distillation = self.distillation_head.loss(
+                img_feats=img_feats,
                 voxel_feats=voxel_feats_enc[0],
                 img=img_inputs[0],
                 depth=depth,

@@ -52,6 +52,8 @@ class FeatureDistillationHead(nn.Module):
         num_samples,
         loss_weight,
         hard_samples=None,
+        image_distill=False,
+        embed_dims_2d=None,
         **kwargs
     ):
         super().__init__()
@@ -74,6 +76,9 @@ class FeatureDistillationHead(nn.Module):
         self.proj_head = Mlp(*embed_dims)
         self.feat_idx = feat_idx
         self.occ_size = occ_size
+        self.image_distill = image_distill
+        if self.image_distill:
+            self.proj_head_2d = Mlp(*embed_dims_2d)
         
         class_freqs = torch.as_tensor(class_frequencies, dtype=torch.float32)
         alpha = 1.0
@@ -81,9 +86,11 @@ class FeatureDistillationHead(nn.Module):
         self.inv_freq = nn.Parameter(inv_freq, requires_grad=False)
         self.loss_weight = loss_weight
 
-    def loss(self, voxel_feats, img, depth, lss_encoder,cam_params, img_metas=None, gt_occ=None, **kwargs):
+
+    def loss(self, img_feats, voxel_feats, img, depth, lss_encoder,cam_params, img_metas=None, gt_occ=None, **kwargs):
         """ Loss function.
         Args:
+            img_feats: Image features, (BN, C, H, W)
             voxel_feats (tuple[Tensor]): Voxel features from the upstream
                 network, each is a 5D-tensor with shape
                 (B | N, C, H_v, W_v, Z_v).
@@ -95,11 +102,21 @@ class FeatureDistillationHead(nn.Module):
             gt_occ: Ground truth occupancy, (B | N, H, W, Z)
         """
         B, N, _, H_img, W_img = img.shape
-        BN, C, H_v, W_v, Z_v = voxel_feats.shape
-        
         #? Get semantic features
         sem_feats = self.semantic_encoder(img.view(B*N, 3, H_img, W_img))[self.feat_idx]  #* (B * N, C, H_f, W_f)
-        sem_feats = sem_feats.view(B, N, -1, sem_feats.shape[-2], sem_feats.shape[-1])  #* (B, N, C, H_f, W_f)
+        sem_feats_bn = sem_feats.view(B, N, -1, sem_feats.shape[-2], sem_feats.shape[-1])  #* (B, N, C, H_f, W_f)
+        
+        feat_loss = self.voxel_loss(voxel_feats, sem_feats_bn, img, depth, lss_encoder, cam_params, img_metas, gt_occ, **kwargs)
+        if self.image_distill:
+            feat2D_loss = self.image_loss(img_feats, sem_feats, **kwargs)
+            feat_loss.update(feat2D_loss)
+
+        return feat_loss
+
+    def voxel_loss(self, voxel_feats, sem_feats, img, depth, lss_encoder,cam_params, img_metas=None, gt_occ=None, **kwargs):
+        B, N, _, _, _ = img.shape
+        BN, C, H_v, W_v, Z_v = voxel_feats.shape
+        
         H_f, W_f = sem_feats.shape[-2], sem_feats.shape[-1]
         sem_feats = sem_feats.flatten(-2).permute(0, 1, 3, 2)   #* (B, N, H_f * W_f, C)
         sem_feats_proj = self.proj_head(sem_feats).permute(0, 1, 3, 2)  #* (B, N, C, H_f * W_f)
@@ -171,3 +188,16 @@ class FeatureDistillationHead(nn.Module):
         feature_align_loss = 1.0 - hard_sim.mean()
 
         return {'loss_occ_feat_align': feature_align_loss * self.loss_weight}
+
+    def image_loss(self, student_feats, teacher_feats, **kwargs):
+        BN, C, H_f, W_f = teacher_feats.shape
+
+        #? Compute cosine similarity
+        teacher_feats = teacher_feats.view(BN, C, H_f * W_f).permute(0, 2, 1)
+        student_feats = student_feats.view(BN, -1, H_f * W_f).permute(0, 2, 1)
+        teacher_feats = self.proj_head_2d(teacher_feats)
+        teacher_norm = F.normalize(teacher_feats, p=2, dim=1, eps=1e-6)  # (BN, C, H_f * W_f)
+        student_norm = F.normalize(student_feats, p=2, dim=1, eps=1e-6)  # (BN, C, H_f * W_f)
+        cos_sim = (teacher_norm * student_norm).sum(dim=1)  # (BN, C, H_f * W_f)
+        feature_align_loss = 1.0 - cos_sim.mean()
+        return {'loss_occ_feat_align_2d': feature_align_loss * self.loss_weight}
