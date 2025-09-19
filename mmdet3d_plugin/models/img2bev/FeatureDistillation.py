@@ -1,6 +1,7 @@
 from typing import Callable, List, Optional
 
 import os
+import logging
 import torch
 from torch import Tensor
 import numpy as np
@@ -8,6 +9,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mmdet3d.registry import MODELS
 
+
+logger = logging.getLogger(__name__)
 
 class Mlp(nn.Module):
     def __init__(
@@ -48,6 +51,7 @@ class FeatureDistillationHead(nn.Module):
         class_frequencies,
         num_samples,
         loss_weight,
+        hard_samples=None,
         **kwargs
     ):
         super().__init__()
@@ -58,6 +62,14 @@ class FeatureDistillationHead(nn.Module):
         self.data_config = data_config
         self.point_cloud_range = point_cloud_range
         self.num_samples = num_samples
+        self.hard_samples = hard_samples
+        if self.hard_samples is None:
+            self.hard_samples = self.num_samples
+        elif self.hard_samples > self.num_samples:
+            self.hard_samples = self.num_samples
+        elif self.hard_samples < 0:
+            logger.warning(f"Hard samples is less than 0, setting to `{self.num_samples}`")
+            self.hard_samples = self.num_samples
         self.semantic_encoder = MODELS.build(semantic_encoder)
         self.proj_head = Mlp(*embed_dims)
         self.feat_idx = feat_idx
@@ -153,6 +165,9 @@ class FeatureDistillationHead(nn.Module):
         teacher_norm = F.normalize(sampled_teacher_feats, p=2, dim=1, eps=1e-6)  # (BN, C, S)
         student_norm = F.normalize(sampled_student_feats, p=2, dim=1, eps=1e-6)  # (BN, C, S)
         cos_sim = (teacher_norm * student_norm).sum(dim=1)  # (BN, S)
-        feature_align_loss = 1.0 - cos_sim.mean()
+        
+        #? Select hard samples (lowest cosine similarity per item)
+        hard_sim, _ = torch.topk(cos_sim, k=self.hard_samples, dim=1, largest=False)
+        feature_align_loss = 1.0 - hard_sim.mean()
 
         return {'loss_occ_feat_align': feature_align_loss * self.loss_weight}
