@@ -23,11 +23,14 @@
 import torch
 from torch import nn
 from torch.nn.functional import pad
-from torch.nn.init import trunc_normal_
 
-from natten.functional import na2d_av, na2d_qk
+try:
+    # Fused path (preferred)
+    from natten.functional import na2d
+except ImportError:
+    # Legacy unfused path not available; raise early if missing
+    raise ImportError("Fused NATTEN na2d is required for this RoPE refactor.")
 
-from natten import NeighborhoodAttention2D
 
 class NeighborhoodCrossAttention2D(nn.Module):
     """
@@ -40,11 +43,12 @@ class NeighborhoodCrossAttention2D(nn.Module):
         num_heads,
         kernel_size,
         dilation=1,
-        bias=True,
+        bias=True, # kept for API compatibility; no RPB is used
         qkv_bias=True,
         qk_scale=None,
         attn_drop=0.0,
         proj_drop=0.0,
+        rope_base=10000.0,      # RoPE frequency base
     ):
         super().__init__()
         self.num_heads = num_heads
@@ -62,16 +66,79 @@ class NeighborhoodCrossAttention2D(nn.Module):
 
         self.q = nn.Linear(dim, dim, bias=qkv_bias)
         self.kv = nn.Linear(dim, dim * 2, bias=qkv_bias)
-        if bias:
-            self.rpb = nn.Parameter(
-                torch.zeros(num_heads, (2 * kernel_size - 1), (2 * kernel_size - 1))
-            )
-            trunc_normal_(self.rpb, std=0.02, mean=0.0, a=-2.0, b=2.0)
-        else:
-            self.register_parameter("rpb", None)
+
+        #* Rotary Positional Embeddings (2D) instead of deprecated rpb
+        #* RoPE requires even pairs along each axis; enforce 4-way divisibility (pairs for H and W)
+        assert (self.head_dim % 4) == 0, (
+            f"head_dim ({self.head_dim}) must be divisible by 4 for axial 2D RoPE."
+        )
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
+        
+        #* RPB removed; keep a placeholder attribute for repr compatibility
+        self.rpb = None
+
+        #* RoPE configuration and lazy caches
+        self.rope_base = rope_base
+        self.register_buffer("_cos_h", None, persistent=False)
+        self.register_buffer("_sin_h", None, persistent=False)
+        self.register_buffer("_cos_w", None, persistent=False)
+        self.register_buffer("_sin_w", None, persistent=False)
+        self._rope_cache_shape = None  # (H, W, dtype, device)
+
+        #* Optional: causal flag for na2d
+        self.is_causal = False
+
+    @staticmethod
+    def _rope_rotate_half(x):
+        # x: (..., d), pair dimensions
+        x_even = x[..., 0::2]
+        x_odd = x[..., 1::2]
+        # rotate (x_even, x_odd) -> (-x_odd, x_even)
+        return torch.stack((-x_odd, x_even), dim=-1).reshape(x.shape)
+
+    def _apply_rope_2d(self, x, sin_h, cos_h, sin_w, cos_w):
+        # x: (B, heads, H, W, head_dim)
+        head_dim = x.shape[-1]
+        half_dim = head_dim // 2
+        x_h = x[..., :half_dim]
+        x_w = x[..., half_dim:]
+        # Apply RoPE along height and width halves separately
+        x_h = (x_h * cos_h) + (self._rope_rotate_half(x_h) * sin_h)
+        x_w = (x_w * cos_w) + (self._rope_rotate_half(x_w) * sin_w)
+        return torch.cat([x_h, x_w], dim=-1)
+
+    def _build_rope_cache(self, H, W, dtype, device):
+        # Build 2D RoPE caches with broadcasting-friendly shapes
+        d = self.head_dim
+        d_half = d // 2
+        d_h = d_half
+        d_w = d_half
+        assert (d_h % 2) == 0 and (d_w % 2) == 0, "Each axial half of head_dim must be even."
+
+        def inv_freq(dim_ax):
+            return 1.0 / (self.rope_base ** (torch.arange(0, dim_ax, 2, device=device, dtype=dtype) / dim_ax))
+
+        inv_h = inv_freq(d_h)
+        inv_w = inv_freq(d_w)
+
+        pos_h = torch.arange(H, device=device, dtype=dtype)
+        pos_w = torch.arange(W, device=device, dtype=dtype)
+
+        freqs_h = torch.outer(pos_h, inv_h)  # (H, d_h/2)
+        freqs_w = torch.outer(pos_w, inv_w)  # (W, d_w/2)
+
+        cos_h = torch.repeat_interleave(torch.cos(freqs_h), repeats=2, dim=-1)  # (H, d_h)
+        sin_h = torch.repeat_interleave(torch.sin(freqs_h), repeats=2, dim=-1)
+        cos_w = torch.repeat_interleave(torch.cos(freqs_w), repeats=2, dim=-1)  # (W, d_w)
+        sin_w = torch.repeat_interleave(torch.sin(freqs_w), repeats=2, dim=-1)
+
+        self._cos_h = cos_h.view(1, 1, H, 1, d_h)
+        self._sin_h = sin_h.view(1, 1, H, 1, d_h)
+        self._cos_w = cos_w.view(1, 1, 1, W, d_w)
+        self._sin_w = sin_w.view(1, 1, 1, W, d_w)
+        self._rope_cache_shape = (H, W, dtype, device)
 
     def forward(self, q, kv):
         B, Hp, Wp, C = q.shape
@@ -81,18 +148,52 @@ class NeighborhoodCrossAttention2D(nn.Module):
             pad_l = pad_t = 0
             pad_r = max(0, self.window_size - W)
             pad_b = max(0, self.window_size - H)
-            x = pad(x, (0, 0, pad_l, pad_r, pad_t, pad_b))
-            _, H, W, _ = x.shape
+            # Pad q and kv on spatial dims; convert to NCHW for pad semantics
+            q = q.permute(0, 3, 1, 2)
+            kv = kv.permute(0, 3, 1, 2)
+            q = pad(q, (0, pad_r, 0, pad_b))
+            kv = pad(kv, (0, pad_r, 0, pad_b))
+            q = q.permute(0, 2, 3, 1)
+            kv = kv.permute(0, 2, 3, 1)
+            _, H, W, _ = q.shape
         
-        q = self.q(q).reshape(B, H, W, 1, self.num_heads, self.head_dim).permute(3, 0, 4, 1, 2, 5).squeeze(0) # [1, B, num_head, H, W, head_dim]
+        # Projections -> heads-first
+        q = self.q(q).reshape(B, H, W, 1, self.num_heads, self.head_dim).permute(3, 0, 4, 1, 2, 5).squeeze(0)  # [B, Heads, H, W, D]
         kv = self.kv(kv).reshape(B, H, W, 2, self.num_heads, self.head_dim).permute(3, 0, 4, 1, 2, 5)
         k, v = kv[0], kv[1]
 
+        # Scale queries
         q = q * self.scale
-        attn = na2d_qk(q, k, self.kernel_size, self.dilation, rpb=self.rpb)
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-        x = na2d_av(attn, v, self.kernel_size, self.dilation)
+
+        # Build/refresh RoPE caches if shape/dtype/device changed
+        cache_needed = (
+            self._rope_cache_shape is None
+            or self._rope_cache_shape[0] != H
+            or self._rope_cache_shape[1] != W
+            or self._rope_cache_shape[2] != q.dtype
+            or self._rope_cache_shape[3] != q.device
+        )
+        if cache_needed:
+            self._build_rope_cache(H, W, q.dtype, q.device)
+
+        # Apply 2D RoPE to q and k (heads-first)
+        q = self._apply_rope_2d(q, self._sin_h, self._cos_h, self._sin_w, self._cos_w)
+        k = self._apply_rope_2d(k, self._sin_h, self._cos_h, self._sin_w, self._cos_w)
+
+        # Fused NA expects heads-last: [B, H, W, Heads, D]
+        q_hl = q.permute(0, 2, 3, 1, 4).contiguous()
+        k_hl = k.permute(0, 2, 3, 1, 4).contiguous()
+        v_hl = v.permute(0, 2, 3, 1, 4).contiguous()
+
+        x = na2d(
+            q_hl, k_hl, v_hl,
+            kernel_size=self.kernel_size,
+            dilation=self.dilation,
+            is_causal=getattr(self, "is_causal", False),
+            scale=None,  # already applied to q
+        )
+        # x: [B, H, W, Heads, D] -> [B, Heads, H, W, D] -> [B, H, W, C]
+        x = x.permute(0, 3, 1, 2, 4)
         x = x.permute(0, 2, 3, 1, 4).reshape(B, H, W, C)
         if pad_r or pad_b:
             x = x[:, :Hp, :Wp, :]
@@ -103,5 +204,5 @@ class NeighborhoodCrossAttention2D(nn.Module):
         return (
             f"head_dim={self.head_dim}, num_heads={self.num_heads}, "
             + f"kernel_size={self.kernel_size}, dilation={self.dilation}, "
-            + f"rel_pos_bias={self.rpb is not None}"
+            + f"rope=True"
         )

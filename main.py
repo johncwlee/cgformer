@@ -20,6 +20,7 @@ def parse_config():
     parser.add_argument('--config_path', default='./configs/semantic_kitti.py')
     parser.add_argument('--ckpt_path', default=None)
     parser.add_argument('--seed', type=int, default=7240, help='random seed point')
+    parser.add_argument('--num_gpus', type=int, default=1, help='number of GPUs to use')
     parser.add_argument('--output_dir', default='results')
     parser.add_argument('--log_folder', default='semantic_kitti')
     parser.add_argument('--save_path', default=None)
@@ -71,8 +72,12 @@ if __name__ == '__main__':
 
     seed = config.seed
     seed_everything(seed, workers=True)
-    num_gpu = torch.cuda.device_count()
-    print(f"Number of GPUs: {num_gpu}")
+    available_gpus = torch.cuda.device_count()
+    requested_gpus = int(getattr(config, 'num_gpus', 1))
+    num_gpu = min(requested_gpus, available_gpus)
+    use_gpu = num_gpu > 0
+    use_ddp = num_gpu > 1
+    print(f"Requested GPUs: {requested_gpus}, Available GPUs: {available_gpus}, Using: {num_gpu}")
     if config.load:
         config.load_from = config.load
     model = pl_model(config)
@@ -93,31 +98,48 @@ if __name__ == '__main__':
         if config.ema:
             callbacks.append(ema_callback)
 
-        trainer = Trainer(
-            devices=[i for i in range(num_gpu)],
-            strategy=DDPStrategy(
+        if use_ddp:
+            trainer = Trainer(
                 accelerator='gpu',
-                find_unused_parameters=False
-            ),
-            max_steps=config.training_steps,
-            callbacks=callbacks,
-            logger=loggers,
-            profiler=profiler,
-            sync_batchnorm=True,
-            log_every_n_steps=config['log_every_n_steps'],
-            check_val_every_n_epoch=config['check_val_every_n_epoch']
-        )
+                devices=num_gpu,
+                strategy=DDPStrategy(find_unused_parameters=False),
+                max_steps=config.training_steps,
+                callbacks=callbacks,
+                logger=loggers,
+                profiler=profiler,
+                sync_batchnorm=True,
+                log_every_n_steps=config['log_every_n_steps'],
+                check_val_every_n_epoch=config['check_val_every_n_epoch']
+            )
+        else:
+            trainer = Trainer(
+                accelerator='gpu' if use_gpu else 'cpu',
+                devices=num_gpu if use_gpu else 1,
+                max_steps=config.training_steps,
+                callbacks=callbacks,
+                logger=loggers,
+                profiler=profiler,
+                sync_batchnorm=False,
+                log_every_n_steps=config['log_every_n_steps'],
+                check_val_every_n_epoch=config['check_val_every_n_epoch']
+            )
         trainer.fit(model=model, datamodule=data_dm, ckpt_path=config['ckpt_path'])
     else:
-        trainer = Trainer(
-            devices=[i for i in range(num_gpu)],
-            strategy=DDPStrategy(
+        if use_ddp:
+            trainer = Trainer(
                 accelerator='gpu',
-                find_unused_parameters=False
-            ),
-            logger=tb_logger,
-            profiler=profiler
-        )
+                devices=num_gpu,
+                strategy=DDPStrategy(find_unused_parameters=False),
+                logger=tb_logger,
+                profiler=profiler
+            )
+        else:
+            trainer = Trainer(
+                accelerator='gpu' if use_gpu else 'cpu',
+                devices=num_gpu if use_gpu else 1,
+                logger=tb_logger,
+                profiler=profiler
+            )
         trainer.test(model=model, datamodule=data_dm, ckpt_path=config['ckpt_path'])
 
     
