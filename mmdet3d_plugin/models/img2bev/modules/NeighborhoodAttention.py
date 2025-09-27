@@ -80,11 +80,13 @@ class NeighborhoodCrossAttention2D(nn.Module):
         self.rpb = None
 
         #* RoPE configuration and lazy caches
+        #  Keep caches as plain attributes (not registered buffers) to avoid SWA/EMA averaging
+        #  attempting to copy/average them across varying spatial sizes.
         self.rope_base = rope_base
-        self.register_buffer("_cos_h", None, persistent=False)
-        self.register_buffer("_sin_h", None, persistent=False)
-        self.register_buffer("_cos_w", None, persistent=False)
-        self.register_buffer("_sin_w", None, persistent=False)
+        self._cos_h = None
+        self._sin_h = None
+        self._cos_w = None
+        self._sin_w = None
         self._rope_cache_shape = None  # (H, W, dtype, device)
 
         #* Optional: causal flag for na2d
