@@ -100,6 +100,7 @@ if __name__ == '__main__':
 
         if use_ddp:
             trainer = Trainer(
+                precision=32,
                 accelerator='gpu',
                 devices=num_gpu,
                 strategy=DDPStrategy(find_unused_parameters=False),
@@ -113,6 +114,7 @@ if __name__ == '__main__':
             )
         else:
             trainer = Trainer(
+                precision=32,
                 accelerator='gpu' if use_gpu else 'cpu',
                 devices=num_gpu if use_gpu else 1,
                 max_steps=config.training_steps,
@@ -127,6 +129,7 @@ if __name__ == '__main__':
     else:
         if use_ddp:
             trainer = Trainer(
+                precision=32,
                 accelerator='gpu',
                 devices=num_gpu,
                 strategy=DDPStrategy(find_unused_parameters=False),
@@ -135,6 +138,7 @@ if __name__ == '__main__':
             )
         else:
             trainer = Trainer(
+                precision=32,
                 accelerator='gpu' if use_gpu else 'cpu',
                 devices=num_gpu if use_gpu else 1,
                 logger=tb_logger,
