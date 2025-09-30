@@ -91,6 +91,8 @@ class SECONDFPN3D(BaseModule):
                 dict(type='Kaiming', layer='ConvTranspose2d'),
                 dict(type='Constant', layer='NaiveSyncBatchNorm2d', val=1.0)
             ]
+        
+        self.init_weights()
 
     @auto_fp16()
     def forward(self, x):

@@ -74,6 +74,8 @@ class WindowMSA(BaseModule):
         self.proj_drop = nn.Dropout(proj_drop_rate)
 
         self.softmax = nn.Softmax(dim=-1)
+        
+        self.init_weights()
 
     def init_weights(self):
         trunc_normal_(self.relative_position_bias_table, std=0.02)
@@ -176,6 +178,8 @@ class ShiftWindowMSA(BaseModule):
             init_cfg=None)
 
         self.drop = MODELS.build(dropout_layer)
+        
+        self.init_weights()
 
     def forward(self, query, hw_shape):
         B, L, C = query.shape
@@ -355,6 +359,8 @@ class SwinBlock(BaseModule):
             add_identity=True,
             init_cfg=None)
 
+        self.init_weights()
+
     def forward(self, x, hw_shape):
 
         def _inner_forward(x):
@@ -451,6 +457,8 @@ class SwinBlockSequence(BaseModule):
             self.blocks.append(block)
 
         self.downsample = downsample
+        
+        self.init_weights()
 
     def forward(self, x, hw_shape):
         for block in self.blocks:

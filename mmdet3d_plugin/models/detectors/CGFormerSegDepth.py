@@ -30,6 +30,8 @@ class CGFormerSegDepth(BaseModule):
                 param.requires_grad = False
         else:
             self.depth_anything = None
+        
+        self.init_weights()
     
     def image_encoder(self, img):
         imgs = img

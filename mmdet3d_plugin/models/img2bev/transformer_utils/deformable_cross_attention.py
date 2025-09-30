@@ -71,6 +71,7 @@ class DeformCrossAttention(BaseModule):
         self.num_cams = num_cams
         self.output_proj = nn.Linear(embed_dims, embed_dims)
         self.batch_first = batch_first
+        self.init_weights()
         self.init_weight()
 
     def init_weight(self):

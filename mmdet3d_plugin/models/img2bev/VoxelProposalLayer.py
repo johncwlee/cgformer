@@ -29,6 +29,8 @@ class VoxelProposalLayer(BaseModule):
 
         self.input_dimensions = input_dimensions
         
+        self.init_weights()
+        
     def create_grid(self):
         # make grid in image plane
         ogfH, ogfW = self.data_config['input_size']

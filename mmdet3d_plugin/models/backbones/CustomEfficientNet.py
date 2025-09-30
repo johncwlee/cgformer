@@ -439,6 +439,8 @@ class CustomEfficientNet(BaseModule):
                     norm_cfg=self.norm_cfg,
                     act_cfg=self.act_cfg))
 
+        self.init_weights()
+
     def make_layer(self):
         # Without the first and the final conv block.
         layer_setting = self.layer_setting[1:-1]

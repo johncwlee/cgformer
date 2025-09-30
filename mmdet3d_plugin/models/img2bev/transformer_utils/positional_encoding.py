@@ -71,6 +71,8 @@ class Learned3DPositionalEncoding(BaseModule):
             nn.ReLU(),
             nn.Linear(num_feats, num_feats),
         )
+        
+        self.init_weights()
 
     def forward(self, ref_3d: Tensor) -> Tensor:
         """Forward function for `Learned3DPositionalEncoding`.

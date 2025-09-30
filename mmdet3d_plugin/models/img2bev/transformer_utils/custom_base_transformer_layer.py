@@ -151,6 +151,8 @@ class MyCustomBaseTransformerLayer(BaseModule):
         num_norms = operation_order.count('norm')
         for _ in range(num_norms):
             self.norms.append(build_norm_layer(norm_cfg, self.embed_dims)[1])
+        
+        self.init_weights()
 
     def forward(self,
                 query,

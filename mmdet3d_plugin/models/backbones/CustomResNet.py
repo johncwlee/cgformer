@@ -40,6 +40,8 @@ class CustomResNet(BaseModule):
         self.res_layers = self.res_layers[:num_stages]
 
         del model
+        
+        self.init_weights()
     
     def forward(self, x):
         x = self.conv1(x)

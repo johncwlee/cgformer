@@ -53,6 +53,8 @@ class BasicBlock(BaseModule):
         self.stride = stride
         self.dilation = dilation
         self.with_cp = with_cp
+        
+        self.init_weights()
 
     @property
     def norm1(self):
