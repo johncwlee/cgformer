@@ -55,13 +55,13 @@ class CGFormerSegDepth(BaseModule):
         B, N, _, _, _ = img_enc_feats.shape
 
         mlp_input = self.depth_net.get_mlp_input(*img_inputs[1:7])
-        context, depth_logits, depth = self.depth_net([img_enc_feats] + img_inputs[1:7] + [mlp_input], img_metas)
+        context, depth = self.depth_net([img_enc_feats] + img_inputs[1:7] + [mlp_input], img_metas)
 
         if len(context.shape) == 5:
             b, n, d, h, w = context.shape
             context = context.view(b * n, d, h, w)
         
-        return context, depth_logits, depth
+        return context, depth
     
     def forward_train(self, data_dict):
         img_inputs = data_dict['img_inputs']
@@ -72,12 +72,12 @@ class CGFormerSegDepth(BaseModule):
         if self.depth_anything is not None:
             img_metas['stereo_depth'] = self.depth_anything(img_inputs[0])
 
-        context, depth_logits, _ = self.extract_img_feat(img_inputs=img_inputs, img_metas=img_metas)
+        context, depth = self.extract_img_feat(img_inputs=img_inputs, img_metas=img_metas)
 
         segmentation = self.plugin_head(context)    #* (B, num_classes, H, W)
 
         losses = dict()
-        losses['loss_depth'] = self.depth_net.get_depth_loss(img_metas['gt_depths'], depth_logits)
+        losses['loss_depth'] = self.depth_net.get_depth_loss(img_metas['gt_depths'], depth)
 
         losses_seg = self.plugin_head.loss(
             pred=segmentation,
@@ -102,7 +102,7 @@ class CGFormerSegDepth(BaseModule):
         if self.depth_anything is not None:
             img_metas['stereo_depth'] = self.depth_anything(img_inputs[0])
 
-        context, depth_logits, depth = self.extract_img_feat(img_inputs=img_inputs, img_metas=img_metas)
+        context, depth = self.extract_img_feat(img_inputs=img_inputs, img_metas=img_metas)
 
         segmentation = self.plugin_head(context)
         
