@@ -8,7 +8,7 @@ def parse_config():
     parser = ArgumentParser()
     parser.add_argument('--source_path', default='logs/CGFormer-Efficient-Swin-SemanticKITTI/tensorboard/version_0/checkpoints/best.ckpt')
     parser.add_argument('--dst_path', default='ckpts/efficientnet-seg-depth.pth')
-    
+    parser.add_argument('--ema', action='store_true')
     args = parser.parse_args()
 
     return args
@@ -16,7 +16,10 @@ def parse_config():
 if __name__ == '__main__':
     args = parse_config()
 
-    checkpoints = torch.load(args.source_path, map_location='cpu')['state_dict']
+    if args.ema:
+        checkpoints = torch.load(args.source_path, map_location='cpu')['current_model_state']
+    else:
+        checkpoints = torch.load(args.source_path, map_location='cpu')['state_dict']
     new_checkpoints = {}
     for key in checkpoints:
         new_checkpoints[key.replace('model.', '')] = checkpoints[key]
